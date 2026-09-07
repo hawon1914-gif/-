@@ -83,7 +83,7 @@ body {
 /* 줄기 : 클립 사각형의 아랫변이 화면 위(-110) → 잔 수면(560) 까지 내려옴 */
 #pourRect {
   transform-box: view-box;
-  transform: translateY(calc(-710px + var(--pour) * 670px));
+  transform: translateY(calc(-770px + var(--pour) * 730px));
 }
 
 /* 채움 없이 선만 그리는 것들 */
@@ -93,7 +93,7 @@ body {
 /* 줄기 끝 방울 : 줄기와 같은 만큼 내려옴 */
 #pourTip {
   transform-box: view-box;
-  transform: translateY(calc(-710px + var(--pour) * 670px));
+  transform: translateY(calc(-770px + var(--pour) * 730px));
 }
 
 /* 잔 속 음료 : 아래에서 위로 차오름 */

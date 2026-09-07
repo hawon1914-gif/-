@@ -47,7 +47,7 @@
       /* 음료 줄기가 위에서 내려옴 */
       s.setProperty("--pour",   easeOut(seg(p, 0.04, 0.32)).toFixed(4));
       /* 줄기가 잔에 닿는 순간 */
-      s.setProperty("--jet",    seg(p, 0.26, 0.31).toFixed(4));
+      s.setProperty("--jet",    seg(p, 0.25, 0.285).toFixed(4));
       /* 잔이 차오름 */
       s.setProperty("--level",  seg(p, 0.30, 0.56).toFixed(4));
       /* 표면 스플래시 */

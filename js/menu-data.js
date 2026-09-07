@@ -13,7 +13,7 @@
    ============================================================ */
 window.CAFE = {
   cafe: {
-    name: "CAFÉ",                 // ← 실제 가게 이름으로 바꾸세요
+    name: "NOON",
     tagline: "BOISSONS · ALIMENTS",
     address: "",                  // 예: "1234 Rue Saint-Denis, Montréal"
     hours: "",                    // 예: "TOUS LES JOURS 10:00 – 20:00"
