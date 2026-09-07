@@ -1,48 +1,43 @@
 /* ============================================================
-   테마 토큰 — 메뉴 사진을 받으면 여기 색값만 바꾸면 전체 톤이 바뀜
+   테마 토큰 — 종이 메뉴판에서 뽑은 색
    ============================================================ */
 :root {
-  --bg:        #f5f1ea;   /* 페이지 배경 */
-  --surface:   #fffdf9;   /* 카드 배경 */
-  --ink:       #2b2019;   /* 본문 글자 */
-  --ink-soft:  #7a6a5d;   /* 보조 글자 */
-  --line:      #e2d8ca;   /* 구분선 */
-  --accent:    #8c5a35;   /* 포인트 (가격, 강조) */
-  --hero-ink:  #fff8ef;   /* 히어로 위 글자 */
+  --navy:   #1e1a4b;   /* 메뉴판 남색 */
+  --cream:  #f2ede1;   /* 일러스트 선 색 */
+  --milk:   #e7e0cd;   /* 음료 색 (선보다 살짝 어둡게 해서 잔 윤곽이 살아나게) */
+  --paper:  #f6f4ee;   /* 메뉴 페이지 배경 */
+  --ink:    #16143a;   /* 본문 글자 */
+  --ink-2:  #6a6788;   /* 보조 글자 */
+  --line:   #d8d4c6;   /* 구분선 */
 
-  --font-title: "Gowun Batang", "Nanum Myeongjo", Georgia, serif;
-  --font-body:  "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
-                "Malgun Gothic", system-ui, sans-serif;
+  --font-en: "Poppins", "Futura", "Century Gothic", system-ui, sans-serif;
+  --font-ko: "Noto Sans KR", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 
-  --max: 720px;            /* 콘텐츠 최대 폭 (모바일 우선) */
-  --hero-scroll: 220vh;    /* 히어로 애니메이션에 쓰는 스크롤 길이 */
+  --max: 760px;
+  --hero-scroll: 280vh;   /* 히어로 연출에 쓰는 스크롤 길이 (길수록 천천히) */
 }
 
 * { box-sizing: border-box; }
-
 html { scroll-behavior: smooth; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-body);
-  line-height: 1.65;
+  font-family: var(--font-ko);
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
 
 /* ============================================================
-   1. 스크롤 연동 히어로
-   ------------------------------------------------------------
-   .hero        : 스크롤 길이를 만드는 긴 통 (높이 = --hero-scroll)
-   .hero__stage : sticky 로 화면에 고정되는 실제 무대
-   .hero__img   : 여기 사진이 들어감. JS 가 --p (0~1) 를 주면
-                  scale / translate / filter 가 그에 맞춰 변함
+   1. 히어로
    ============================================================ */
 .hero {
   position: relative;
   height: var(--hero-scroll);
+  /* JS 가 갱신하는 진행도 (0~1). 기본값은 애니메이션 시작 상태 */
+  --pour: 0; --level: 0; --splash: 0; --jet: 0; --zoom: 1; --wash: 0; --end: 0; --copy: 1; --cue: 1;
 }
 
 .hero__stage {
@@ -50,78 +45,170 @@ body {
   top: 0;
   height: 100svh;
   overflow: hidden;
+  background: var(--navy);
   display: grid;
   place-items: center;
-  background: #1a120c;
 }
 
-.hero__media {
+/* ---- SVG 일러스트 ---- */
+.art {
   position: absolute;
-  inset: -6%;                     /* 이동해도 가장자리 안 비게 여유 */
-  will-change: transform, filter;
-  transform:
-    scale(calc(1.18 - 0.18 * var(--p, 0)))
-    translate3d(0, calc(var(--p, 0) * -6vh), 0);
-}
-
-.hero__img {
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
   display: block;
 }
 
-/* 위아래 그라데이션 — 글자 가독성 확보 */
-.hero__scrim {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(180deg, rgba(20,13,8,.55) 0%, rgba(20,13,8,0) 35%),
-    linear-gradient(0deg,  rgba(20,13,8,.75) 0%, rgba(20,13,8,0) 55%);
-  opacity: calc(0.45 + 0.55 * var(--p, 0));
+/* 줌인 : 음료 줄기(400,300) 를 중심으로 확대 */
+#zoom {
+  transform-box: view-box;
+  transform-origin: 407px 347px;   /* 음료 줄기 위의 한 점 */
+  transform: scale(var(--zoom));
+  will-change: transform;
 }
 
+/* 선으로 그린 부분 (잔·손) */
+.art .ln {
+  fill: var(--navy);
+  stroke: var(--cream);
+  stroke-width: 11;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 채워진 부분 (음료) */
+.art .fill { fill: var(--milk); }
+
+
+/* 줄기 : 클립 사각형의 아랫변이 화면 위(-110) → 잔 수면(560) 까지 내려옴 */
+#pourRect {
+  transform-box: view-box;
+  transform: translateY(calc(-710px + var(--pour) * 670px));
+}
+
+/* 채움 없이 선만 그리는 것들 */
+.art .ln--line { fill: none; stroke-width: 9; }
+.art .ln--over { fill: none; }
+
+/* 줄기 끝 방울 : 줄기와 같은 만큼 내려옴 */
+#pourTip {
+  transform-box: view-box;
+  transform: translateY(calc(-710px + var(--pour) * 670px));
+}
+
+/* 잔 속 음료 : 아래에서 위로 차오름 */
+#liquid {
+  transform-box: view-box;
+  transform: translateY(calc((1 - var(--level)) * 300px));
+}
+
+#splash { opacity: var(--splash); }
+#jet { opacity: var(--jet); }
+
+/* ---- 화면을 덮는 크림색 ---- */
+.hero__wash {
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  opacity: var(--wash);
+  pointer-events: none;
+}
+
+/* ---- 가게 이름 ---- */
 .hero__copy {
   position: relative;
   text-align: center;
-  color: var(--hero-ink);
+  color: var(--cream);
   padding: 0 24px;
-  transform: translate3d(0, calc(var(--p, 0) * -4vh), 0);
-  opacity: calc(1 - var(--p, 0) * 1.15);
+  margin-bottom: 42vh;          /* 잔 위쪽에 배치 */
+  opacity: var(--copy);
+  pointer-events: none;
 }
 
 .hero__name {
-  font-family: var(--font-title);
-  font-size: clamp(2.2rem, 11vw, 3.6rem);
-  letter-spacing: .04em;
-  margin: 0 0 .35em;
-  font-weight: 500;
+  font-family: var(--font-en);
+  font-weight: 700;
+  font-size: clamp(2rem, 9vw, 3rem);
+  letter-spacing: .02em;
+  margin: 0 0 .4em;
+  text-transform: uppercase;
 }
 
 .hero__tagline {
   margin: 0;
-  font-size: clamp(.85rem, 3.6vw, 1rem);
-  letter-spacing: .22em;
+  font-family: var(--font-en);
+  font-size: clamp(.65rem, 2.8vw, .8rem);
+  letter-spacing: .34em;
+  font-weight: 500;
+  opacity: .8;
+}
+
+/* ---- 크림색 위에 떠오르는 메뉴 타이틀 ---- */
+.hero__end {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 14px;
+  opacity: var(--end);
+  pointer-events: none;
+}
+
+.hero__endName {
+  font-family: var(--font-en);
+  font-weight: 700;
+  font-size: clamp(1.6rem, 7vw, 2.4rem);
+  letter-spacing: .02em;
   text-transform: uppercase;
-  opacity: .85;
+  color: var(--navy);
+}
+
+.hero__endLabel {
+  font-family: var(--font-en);
+  font-size: .72rem;
+  letter-spacing: .5em;
+  font-weight: 500;
+  color: var(--ink-2);
+  padding-left: .5em;
 }
 
 .hero__cue {
   position: absolute;
-  bottom: 28px;
+  bottom: max(24px, env(safe-area-inset-bottom));
   left: 50%;
   translate: -50% 0;
-  color: var(--hero-ink);
-  font-size: .7rem;
-  letter-spacing: .3em;
-  opacity: calc(1 - var(--p, 0) * 2);
-  animation: cue 2.2s ease-in-out infinite;
+  color: var(--cream);
+  font-family: var(--font-en);
+  font-size: .62rem;
+  letter-spacing: .42em;
+  padding-left: .42em;
+  opacity: var(--cue);
+  animation: cue 2.4s ease-in-out infinite;
 }
 
 @keyframes cue {
-  0%, 100% { transform: translateY(0);   opacity: .7; }
-  50%      { transform: translateY(6px); opacity: 1;  }
+  0%, 100% { transform: translateY(0);   }
+  50%      { transform: translateY(7px); }
 }
+
+/* 메뉴로 바로 건너뛰기 */
+.hero__skip {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top));
+  right: 20px;
+  z-index: 2;
+  color: var(--cream);
+  font-family: var(--font-en);
+  font-size: .66rem;
+  letter-spacing: .22em;
+  text-decoration: none;
+  padding: 8px 14px;
+  border: 1px solid rgba(242,237,225,.35);
+  border-radius: 999px;
+  opacity: var(--copy);
+}
+.hero__skip:hover { border-color: var(--cream); }
 
 /* ============================================================
    2. 메뉴
@@ -129,145 +216,149 @@ body {
 .menu {
   position: relative;
   z-index: 1;
-  background: var(--bg);
-  border-radius: 28px 28px 0 0;
-  margin-top: -28px;
-  padding: 44px 0 0;
-  box-shadow: 0 -18px 40px rgba(30, 18, 10, .18);
+  background: var(--paper);
+  padding-top: 8vh;
 }
 
 .wrap {
   max-width: var(--max);
   margin: 0 auto;
-  padding: 0 22px;
+  padding: 0 26px;
 }
 
-.section { margin-bottom: 52px; }
+/* ---- 큰 묶음 (BOISSONS / ALIMENTS) ---- */
+.group { margin-bottom: 34px; }
 
-.section__head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 18px;
+.group__head {
+  position: relative;
+  margin: 0 0 34px;
+  padding: 26px 0 22px;
 }
+
+.group__blob {
+  position: absolute;
+  left: -6%;
+  top: 0;
+  width: 62%;
+  min-width: 230px;
+  z-index: 0;
+}
+
+.group__title {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-family: var(--font-en);
+  font-weight: 700;
+  font-size: clamp(1.9rem, 9vw, 2.6rem);
+  letter-spacing: .01em;
+  color: var(--navy);
+}
+.group--on-blob .group__title { color: var(--cream); }
+
+/* ---- 카테고리 ---- */
+.section { margin-bottom: 40px; }
 
 .section__title {
-  font-family: var(--font-title);
-  font-size: 1.35rem;
-  font-weight: 600;
-  letter-spacing: .06em;
-  margin: 0;
-  white-space: nowrap;
+  font-family: var(--font-en);
+  font-weight: 700;
+  font-size: 1.02rem;
+  letter-spacing: .04em;
+  color: var(--navy);
+  margin: 0 0 12px;
 }
 
-.section__title small {
-  display: block;
-  font-family: var(--font-body);
-  font-size: .68rem;
-  letter-spacing: .22em;
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  font-weight: 400;
-  margin-top: 4px;
-}
+.section__mark { margin-left: 4px; font-size: .85em; }
 
-.section__rule {
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-}
-
-.items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
+.items { list-style: none; margin: 0; padding: 0; }
 
 .item {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 14px 0;
-  border-bottom: 1px dashed var(--line);
-  /* 스크롤 진입 애니메이션 */
+  gap: 14px;
+  padding: 5px 0;
   opacity: 0;
-  transform: translateY(14px);
-  transition: opacity .5s ease, transform .5s ease;
+  transform: translateY(10px);
+  transition: opacity .55s ease, transform .55s ease;
 }
-
 .item.is-in { opacity: 1; transform: none; }
-.item:last-child { border-bottom: 0; }
-
-.item__main { flex: 1; min-width: 0; }
 
 .item__name {
-  font-weight: 600;
-  font-size: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-en);
+  font-weight: 400;
+  font-size: .93rem;
+  letter-spacing: .015em;
+  text-transform: uppercase;
+  line-height: 1.4;
 }
 
-.item__desc {
-  margin: 3px 0 0;
-  font-size: .82rem;
-  color: var(--ink-soft);
+.item__ko {
+  font-family: var(--font-ko);
+  font-weight: 300;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: .35em;
+  color: var(--ink);
 }
 
 .item__price {
+  font-family: var(--font-en);
+  font-weight: 400;
+  font-size: .93rem;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--accent);
   white-space: nowrap;
 }
 
-.tag {
-  font-size: .62rem;
-  letter-spacing: .1em;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  line-height: 1.6;
-}
-
-.tag--soft {
-  background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--accent);
-}
+.item__sig { color: var(--navy); margin-left: .3em; }
 
 /* ============================================================
    3. 푸터
    ============================================================ */
+.foot__wave {
+  display: block;
+  width: 100%;
+  height: 52px;
+  margin-bottom: -1px;
+}
+
 .foot {
-  border-top: 1px solid var(--line);
-  padding: 30px 0 46px;
+  position: relative;
+  margin-top: 30px;
+  padding: 46px 0 56px;
   text-align: center;
-  color: var(--ink-soft);
+  color: var(--cream);
+  background: var(--navy);
   font-size: .8rem;
 }
 
 .foot__name {
-  font-family: var(--font-title);
-  color: var(--ink);
-  font-size: 1rem;
-  letter-spacing: .1em;
-  margin-bottom: 6px;
+  font-family: var(--font-en);
+  font-weight: 700;
+  letter-spacing: .06em;
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.foot__notice {
+  white-space: pre-line;
+  margin-top: 20px;
+  font-size: .72rem;
+  opacity: .7;
+  letter-spacing: .02em;
 }
 
 .foot a { color: inherit; }
 
 /* ============================================================
-   접근성 — 모션 최소화 설정이면 스크롤 연동을 끔
+   접근성 : 모션 최소화 설정이면 연출을 끄고 바로 메뉴를 보여줌
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .hero { height: 100svh; }
-  .hero__media { transform: none; }
-  .hero__copy { transform: none; opacity: 1; }
+  .hero { height: 100svh; --pour: 1; --level: 1; --splash: 1; --jet: 1; }
+  #zoom { transform: none; }
   .hero__cue { animation: none; }
   .item { opacity: 1; transform: none; transition: none; }
 }

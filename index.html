@@ -3,51 +3,155 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1a120c">
-  <meta name="description" content="카페 메뉴">
-  <title>CAFE · MENU</title>
+  <meta name="theme-color" content="#1e1a4b">
+  <meta name="description" content="메뉴">
+  <title>MENU</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-  <!-- ===== 스크롤 연동 히어로 =====
-       사진 교체: assets/hero.jpg 파일만 바꾸면 됩니다.
-       (세로로 긴 사진일수록 잘 어울림 / 권장 1600x2000 이상)
-       움직임 길이 조절: css/style.css 의 --hero-scroll 값
-  -->
-  <header class="hero">
-    <div class="hero__stage">
-      <div class="hero__media">
-        <img class="hero__img" src="assets/hero.svg" alt="" fetchpriority="high">
-      </div>
-      <div class="hero__scrim"></div>
+<!-- ============================================================
+     히어로 : 스크롤 연동 애니메이션
+       0.0 ~ 0.06  빈 잔이 손에 들려 있음
+       0.06~ 0.46  위에서 음료 줄기가 내려와 잔에 담김
+       0.48~ 0.86  음료 줄기로 줌인
+       0.72~ 1.00  화면이 크림색으로 덮이고 메뉴가 페이드로 등장
+     JS 가 진행도를 계산해 --pour/--level/--splash/--zoom/--wash 로 넘겨줍니다.
+     ============================================================ -->
+<header class="hero" id="hero">
+  <div class="hero__stage">
 
-      <div class="hero__copy">
-        <h1 class="hero__name" id="cafe-name">CAFE NAME</h1>
-        <p class="hero__tagline" id="cafe-tagline">Roastery &amp; Dessert</p>
-      </div>
+    <svg class="art" id="art" viewBox="0 0 800 1300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <!-- 음료 줄기 : 클립 사각형이 아래로 내려오면서 줄기가 드러남 -->
+        <clipPath id="pourClip">
+          <rect id="pourRect" x="330" y="-600" width="180" height="1200"/>
+        </clipPath>
+        <!-- 잔 안쪽 : 음료가 잔 밖으로 안 나가게 (위는 잔 입구 안쪽 테두리까지) -->
+        <clipPath id="bowlClip">
+          <path d="M195 529 A205 30 0 0 1 605 529 C601 700 515 807 400 807 C285 807 199 700 195 529 Z"/>
+        </clipPath>
+      </defs>
 
-      <div class="hero__cue" aria-hidden="true">SCROLL</div>
+      <g id="zoom">
+       <!-- 화면 안에 그림이 들어오도록 전체를 살짝 축소 -->
+       <g id="fit" transform="translate(400 640) scale(0.86) translate(-400 -640)">
+
+        <!-- ---------- 잔 (남색 채움) ---------- -->
+        <g class="ln">
+          <path d="M600 516 C664 508 692 552 668 588 C656 606 626 612 606 602"/>
+          <path d="M602 542 C646 536 664 566 646 586"/>
+          <path d="M195 529 L195 571 A205 30 0 0 0 605 571 L605 529"/>
+          <path d="M195 571 C199 700 285 805 400 805 C515 805 601 700 605 571"/>
+          <ellipse cx="400" cy="529" rx="205" ry="30"/>
+        </g>
+
+        <!-- ---------- 잔에 차오르는 음료 ---------- -->
+        <g clip-path="url(#bowlClip)">
+            <!-- 잔 안에서 수면까지 이어지는 줄기 -->
+            <rect class="fill" id="jet" x="379" y="470" width="56" height="440"/>
+          <g id="liquid">
+            <!-- 수면(타원) + 그 아래 채움 -->
+            <ellipse class="fill" cx="400" cy="545" rx="205" ry="30"/>
+            <rect class="fill" x="150" y="545" width="500" height="400"/>
+            <!-- 줄기가 떨어지며 튀는 물결 -->
+            <path class="fill" id="crown" d="M232 544
+              q20 -18 40 -5 q20 11 40 -9 q20 -20 40 -6 q20 13 40 -11
+              q20 -19 40 -4 q20 12 40 -8 q20 -16 40 -3 q20 13 40 7
+              L552 580 L232 580 Z"/>
+          </g>
+        </g>
+
+        <!-- ---------- 잔 선 (음료 위에 다시 그려서 테두리가 보이게) ---------- -->
+        <g class="ln ln--over">
+          <path d="M195 529 L195 571 A205 30 0 0 0 605 571 L605 529"/>
+          <path d="M195 571 C199 700 285 805 400 805 C515 805 601 700 605 571"/>
+          <ellipse cx="400" cy="529" rx="205" ry="30"/>
+        </g>
+
+        <!-- ---------- 위에서 내려오는 음료 줄기 ---------- -->
+        <g clip-path="url(#pourClip)">
+          <rect class="fill" x="379" y="-700" width="56" height="1270"/>
+        </g>
+        <!-- 줄기 끝의 방울 (줄기와 같이 내려옴) -->
+        <ellipse class="fill" id="pourTip" cx="407" cy="600" rx="30" ry="15"/>
+
+        <!-- ---------- 튀어오른 방울 ---------- -->
+        <g id="splash">
+          <ellipse class="fill" cx="566" cy="462" rx="9" ry="13" transform="rotate(20 566 462)"/>
+          <ellipse class="fill" cx="248" cy="486" rx="6" ry="9" transform="rotate(-22 248 486)"/>
+        </g>
+
+        <!-- ---------- 잔을 받친 손 ---------- -->
+        <path class="ln" d="M210 1600
+          L210 940
+          C208 900 190 860 160 830
+          C130 802 122 764 152 750
+          C182 736 216 772 238 812
+          C262 842 300 860 340 866
+          C384 870 428 866 466 850
+          C500 836 524 800 544 762
+          C562 704 604 668 640 664
+          C672 660 692 690 680 716
+          C668 742 640 758 614 766
+          C640 782 664 800 678 822
+          C696 850 680 882 650 886
+          C614 890 570 880 540 866
+          C524 858 522 878 522 900
+          L522 1600 Z"/>
+        <path class="ln ln--line" d="M336 908 C384 884 440 868 496 862"/>
+
+       </g>
+      </g>
+    </svg>
+
+    <!-- 화면을 덮는 크림색 (줌인 끝에서 채워짐) -->
+    <div class="hero__wash"></div>
+
+    <!-- 가게 이름 : 스크롤 시작하면 사라짐 -->
+    <div class="hero__copy">
+      <h1 class="hero__name" id="cafe-name">CAFÉ</h1>
+      <p class="hero__tagline" id="cafe-tagline">BOISSONS · ALIMENTS</p>
     </div>
-  </header>
 
-  <!-- ===== 메뉴 (js/menu-data.js 내용으로 자동 생성) ===== -->
-  <main class="menu">
-    <div class="wrap" id="menu-root"></div>
+    <!-- 크림색 위에 떠오르는 메뉴 타이틀 -->
+    <div class="hero__end">
+      <div class="hero__endName" id="end-name">CAFÉ</div>
+      <div class="hero__endLabel">MENU</div>
+    </div>
 
-    <footer class="foot">
-      <div class="wrap">
-        <div class="foot__name" id="foot-name">CAFE NAME</div>
-        <div id="foot-address"></div>
-        <div id="foot-hours"></div>
-        <div id="foot-phone"></div>
-        <div><a id="foot-instagram" href="#" target="_blank" rel="noopener"></a></div>
-        <p id="foot-notice" style="white-space:pre-line; margin-top:18px; font-size:.75rem;"></p>
-      </div>
-    </footer>
-  </main>
+    <a class="hero__skip" href="#menu">MENU ↓</a>
+    <div class="hero__cue" aria-hidden="true">SCROLL</div>
+  </div>
+</header>
 
-  <script src="js/menu-data.js"></script>
-  <script src="js/app.js"></script>
+<!-- ============================================================
+     메뉴 (js/menu-data.js 내용으로 자동 생성)
+     ============================================================ -->
+<main class="menu" id="menu">
+  <div class="wrap" id="menu-root"></div>
+
+  <svg class="foot__wave" viewBox="0 0 400 52" preserveAspectRatio="none" aria-hidden="true">
+    <path fill="#1e1a4b" d="M0 30 C60 6 120 44 190 26 C250 10 320 34 400 14 L400 52 L0 52 Z"/>
+  </svg>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot__name" id="foot-name">CAFÉ</div>
+      <div id="foot-address"></div>
+      <div id="foot-hours"></div>
+      <div id="foot-phone"></div>
+      <div><a id="foot-instagram" href="#" target="_blank" rel="noopener"></a></div>
+      <p class="foot__notice" id="foot-notice"></p>
+    </div>
+  </footer>
+</main>
+
+<script src="js/menu-data.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

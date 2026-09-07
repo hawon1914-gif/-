@@ -1,45 +1,78 @@
 /* ============================================================
-   app.js — (1) 스크롤 연동 히어로  (2) 메뉴 렌더  (3) 등장 애니메이션
+   app.js
+     1) 스크롤 → 히어로 연출 진행도 계산
+     2) 메뉴 렌더링
+     3) 등장 애니메이션
    ============================================================ */
 (function () {
   "use strict";
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---------- 1. 스크롤 진행도(0~1)를 CSS 변수 --p 로 전달 ----------
-     히어로 통(.hero)의 스크롤 구간을 0~1로 정규화해서 넘긴다.
-     CSS 쪽에서 scale / translate / opacity 가 이 값을 받아 움직임.
-     사진을 바꿔도 이 로직은 그대로 쓰면 됨.
-  ------------------------------------------------------------------ */
+  /* 0~1 사이 구간 진행도 */
+  function seg(p, a, b) {
+    var v = (p - a) / (b - a);
+    return v < 0 ? 0 : v > 1 ? 1 : v;
+  }
+  function easeIn(v)  { return v * v; }
+  function easeOut(v) { return 1 - (1 - v) * (1 - v); }
+
+  /* ---------- 1. 히어로 ---------- */
   function initHero() {
-    var hero = document.querySelector(".hero");
-    if (!hero || reduceMotion) return;
+    var hero = document.getElementById("hero");
+    var art  = document.getElementById("art");
+    if (!hero) return;
+
+    /* 가로로 넓은 화면에서는 그림 전체가 보이게 */
+    function fitArt() {
+      if (!art) return;
+      var wide = window.innerWidth / window.innerHeight > 0.9;
+      art.setAttribute("preserveAspectRatio", wide ? "xMidYMid meet" : "xMidYMid slice");
+    }
+
+    if (reduceMotion) { fitArt(); return; }
 
     var ticking = false;
 
     function update() {
       ticking = false;
       var rect = hero.getBoundingClientRect();
-      var travel = rect.height - window.innerHeight;   // 실제 움직일 수 있는 거리
+      var travel = rect.height - window.innerHeight;
       if (travel <= 0) return;
+
       var p = -rect.top / travel;
       p = p < 0 ? 0 : p > 1 ? 1 : p;
-      hero.style.setProperty("--p", p.toFixed(4));
+
+      var s = hero.style;
+      /* 음료 줄기가 위에서 내려옴 */
+      s.setProperty("--pour",   easeOut(seg(p, 0.04, 0.32)).toFixed(4));
+      /* 줄기가 잔에 닿는 순간 */
+      s.setProperty("--jet",    seg(p, 0.26, 0.31).toFixed(4));
+      /* 잔이 차오름 */
+      s.setProperty("--level",  seg(p, 0.30, 0.56).toFixed(4));
+      /* 표면 스플래시 */
+      s.setProperty("--splash", seg(p, 0.31, 0.45).toFixed(4));
+      /* 가게 이름 / 스크롤 안내는 먼저 사라짐 */
+      s.setProperty("--copy",   (1 - seg(p, 0.02, 0.14)).toFixed(4));
+      s.setProperty("--cue",    (1 - seg(p, 0.00, 0.10)).toFixed(4));
+      /* 줄기로 줌인 */
+      s.setProperty("--zoom",   (1 + easeIn(seg(p, 0.58, 0.86)) * 26).toFixed(3));
+      /* 크림색이 화면을 덮고 메뉴 타이틀이 떠오름 */
+      s.setProperty("--wash",   seg(p, 0.78, 0.90).toFixed(4));
+      s.setProperty("--end",    seg(p, 0.87, 0.96).toFixed(4));
     }
 
     function onScroll() {
-      if (!ticking) {
-        ticking = true;
-        window.requestAnimationFrame(update);
-      }
+      if (!ticking) { ticking = true; window.requestAnimationFrame(update); }
     }
 
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
+    window.addEventListener("resize", function () { fitArt(); onScroll(); });
+    fitArt();
     update();
   }
 
-  /* ---------- 2. 메뉴 렌더 ---------- */
+  /* ---------- 2. 메뉴 렌더링 ---------- */
   function el(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -47,57 +80,78 @@
     return n;
   }
 
+  /* 종이 메뉴판의 남색 얼룩 모양 */
+  function blob() {
+    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("class", "group__blob");
+    s.setAttribute("viewBox", "0 0 320 130");
+    s.setAttribute("aria-hidden", "true");
+    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("fill", "#1e1a4b");
+    p.setAttribute("d", "M0 20 C40 -6 96 -4 150 8 C206 20 258 6 300 22 C322 30 320 62 312 86 " +
+                        "C302 116 264 130 210 128 C150 126 96 130 48 126 C14 122 0 104 0 76 Z");
+    s.appendChild(p);
+    return s;
+  }
+
   function renderMenu(data) {
     var root = document.getElementById("menu-root");
-    if (!root || !data) return;
+    if (!root || !data || !data.groups) return;
 
-    data.sections.forEach(function (section) {
-      var sec = el("section", "section");
+    data.groups.forEach(function (group, gi) {
+      var g = el("section", "group");
 
-      var head = el("div", "section__head");
-      var h2 = el("h2", "section__title", section.title);
-      if (section.en) h2.appendChild(el("small", null, section.en));
-      head.appendChild(h2);
-      head.appendChild(el("div", "section__rule"));
-      sec.appendChild(head);
+      var head = el("div", "group__head");
+      if (gi === 0) {                       /* 첫 묶음만 얼룩 위에 (종이와 동일) */
+        head.appendChild(blob());
+        g.classList.add("group--on-blob");
+      }
+      head.appendChild(el("h2", "group__title", group.title));
+      g.appendChild(head);
 
-      var ul = el("ul", "items");
-      section.items.forEach(function (item) {
-        var li = el("li", "item");
+      group.sections.forEach(function (section) {
+        var sec = el("section", "section");
 
-        var main = el("div", "item__main");
-        var name = el("div", "item__name");
-        name.appendChild(document.createTextNode(item.name));
-        if (item.tag) name.appendChild(el("span", "tag", item.tag));
-        main.appendChild(name);
-        if (item.desc) main.appendChild(el("p", "item__desc", item.desc));
+        var t = el("h3", "section__title", section.title);
+        if (section.mark) t.appendChild(el("span", "section__mark", section.mark));
+        sec.appendChild(t);
 
-        li.appendChild(main);
-        li.appendChild(el("div", "item__price", item.price));
-        ul.appendChild(li);
+        var ul = el("ul", "items");
+        section.items.forEach(function (item) {
+          var li = el("li", "item");
+
+          var name = el("div", "item__name", item.fr);
+          if (item.sig) name.appendChild(el("span", "item__sig", "✱"));
+          if (item.ko)  name.appendChild(el("span", "item__ko", item.ko));
+
+          li.appendChild(name);
+          li.appendChild(el("div", "item__price", item.price));
+          ul.appendChild(li);
+        });
+
+        sec.appendChild(ul);
+        g.appendChild(sec);
       });
 
-      sec.appendChild(ul);
-      root.appendChild(sec);
+      root.appendChild(g);
     });
   }
 
-  /* ---------- 3. 가게 정보 채우기 ---------- */
+  /* ---------- 3. 가게 정보 ---------- */
   function renderInfo(data) {
-    var c = data.cafe;
-    document.title = c.name + " · MENU";
+    var c = data.cafe || {};
+    if (c.name) document.title = c.name + " · MENU";
 
     var map = {
-      "cafe-name":     c.name,
-      "cafe-tagline":  c.tagline,
-      "foot-name":     c.name,
-      "foot-address":  c.address,
-      "foot-hours":    c.hours,
-      "foot-phone":    c.phone
+      "cafe-name": c.name, "cafe-tagline": c.tagline,
+      "end-name": c.name,  "foot-name": c.name,
+      "foot-address": c.address, "foot-hours": c.hours, "foot-phone": c.phone
     };
     Object.keys(map).forEach(function (id) {
       var node = document.getElementById(id);
-      if (node && map[id]) node.textContent = map[id];
+      if (!node) return;
+      if (map[id]) node.textContent = map[id];
+      else if (id.indexOf("foot-") === 0) node.remove();
     });
 
     var ig = document.getElementById("foot-instagram");
@@ -105,8 +159,8 @@
       if (c.instagram) {
         ig.textContent = c.instagram;
         ig.href = "https://instagram.com/" + c.instagram.replace(/^@/, "");
-      } else {
-        ig.remove();
+      } else if (ig.parentNode) {
+        ig.parentNode.remove();
       }
     }
 
@@ -114,34 +168,28 @@
     if (notice && data.notice) notice.textContent = data.notice;
   }
 
-  /* ---------- 4. 메뉴 항목 등장 애니메이션 ---------- */
+  /* ---------- 4. 메뉴 등장 애니메이션 ---------- */
   function initReveal() {
     var items = document.querySelectorAll(".item");
     if (reduceMotion || !("IntersectionObserver" in window)) {
-      items.forEach(function (i) { i.classList.add("is-in"); });
+      Array.prototype.forEach.call(items, function (i) { i.classList.add("is-in"); });
       return;
     }
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
-        if (e.isIntersecting) {
-          e.target.classList.add("is-in");
-          io.unobserve(e.target);
-        }
+        if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); }
       });
-    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.1 });
+    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.05 });
 
-    items.forEach(function (item, i) {
-      item.style.transitionDelay = (Math.min(i, 6) * 45) + "ms";
+    Array.prototype.forEach.call(items, function (item, i) {
+      item.style.transitionDelay = (Math.min(i % 8, 6) * 40) + "ms";
       io.observe(item);
     });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
     var data = window.CAFE;
-    if (data) {
-      renderInfo(data);
-      renderMenu(data);
-    }
+    if (data) { renderInfo(data); renderMenu(data); }
     initHero();
     initReveal();
   });
