@@ -35,6 +35,9 @@ body {
 .hero {
   position: relative;
   height: var(--hero-scroll);
+  /* 사파리 하단 툴바가 접혔다 펴질 때 고정 무대 아래로 틈이 보이는 것을 막는
+     2차 안전장치. 틈이 생겨도 남색이라 눈에 띄지 않음 */
+  background: var(--navy);
   /* JS 가 갱신하는 진행도 (0~1). 기본값은 애니메이션 시작 상태 */
   --pour: 0; --splash: 0; --tip: 1; --zoom: 1; --wash: 0; --end: 0; --copy: 1; --cue: 1;
 }
@@ -42,7 +45,10 @@ body {
 .hero__stage {
   position: sticky;
   top: 0;
+  /* svh 는 툴바가 펼쳐졌을 때의 높이라, 툴바가 접히면 아래에 흰 띠가 생긴다.
+     lvh(툴바가 접힌 최대 높이)로 잡아 항상 화면을 덮게 한다. */
   height: 100svh;
+  height: 100lvh;
   overflow: hidden;
   background: var(--navy);
   display: grid;
@@ -149,7 +155,7 @@ body {
 
 .hero__cue {
   position: absolute;
-  bottom: max(24px, env(safe-area-inset-bottom));
+  bottom: calc(max(24px, env(safe-area-inset-bottom)) + 56px);
   left: 50%;
   translate: -50% 0;
   color: var(--cream);
@@ -349,7 +355,7 @@ body {
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .hero { height: 100svh; --pour: 0; --splash: 0; --tip: 0; }  /* 빈 잔 상태로 고정 */
+  .hero { height: 100lvh; --pour: 0; --splash: 0; --tip: 0; }  /* 빈 잔 상태로 고정 */
   #zoom { transform: none; }
   .hero__cue { animation: none; }
   .item { opacity: 1; transform: none; transition: none; }
