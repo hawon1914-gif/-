@@ -45,21 +45,19 @@
 
       var s = hero.style;
       /* 음료 줄기가 위에서 내려옴 */
-      s.setProperty("--pour",   easeOut(seg(p, 0.04, 0.32)).toFixed(4));
-      /* 줄기가 잔에 닿는 순간 */
-      s.setProperty("--jet",    seg(p, 0.25, 0.285).toFixed(4));
-      /* 잔이 차오름 */
-      s.setProperty("--level",  seg(p, 0.30, 0.56).toFixed(4));
-      /* 표면 스플래시 */
-      s.setProperty("--splash", seg(p, 0.31, 0.45).toFixed(4));
+      s.setProperty("--pour",   easeOut(seg(p, 0.04, 0.34)).toFixed(4));
+      /* 줄기 끝 방울은 잔에 닿으면 사라짐 */
+      s.setProperty("--tip",    (1 - seg(p, 0.24, 0.31)).toFixed(4));
+      /* 잔에 부딪혀 이는 물결 */
+      s.setProperty("--splash", seg(p, 0.25, 0.36).toFixed(4));
       /* 가게 이름 / 스크롤 안내는 먼저 사라짐 */
       s.setProperty("--copy",   (1 - seg(p, 0.02, 0.14)).toFixed(4));
       s.setProperty("--cue",    (1 - seg(p, 0.00, 0.10)).toFixed(4));
       /* 줄기로 줌인 */
-      s.setProperty("--zoom",   (1 + easeIn(seg(p, 0.58, 0.86)) * 26).toFixed(3));
+      s.setProperty("--zoom",   (1 + easeIn(seg(p, 0.44, 0.80)) * 26).toFixed(3));
       /* 크림색이 화면을 덮고 메뉴 타이틀이 떠오름 */
-      s.setProperty("--wash",   seg(p, 0.78, 0.90).toFixed(4));
-      s.setProperty("--end",    seg(p, 0.87, 0.96).toFixed(4));
+      s.setProperty("--wash",   seg(p, 0.70, 0.84).toFixed(4));
+      s.setProperty("--end",    seg(p, 0.82, 0.93).toFixed(4));
     }
 
     function onScroll() {

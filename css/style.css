@@ -4,7 +4,6 @@
 :root {
   --navy:   #1e1a4b;   /* 메뉴판 남색 */
   --cream:  #f2ede1;   /* 일러스트 선 색 */
-  --milk:   #e7e0cd;   /* 음료 색 (선보다 살짝 어둡게 해서 잔 윤곽이 살아나게) */
   --paper:  #f6f4ee;   /* 메뉴 페이지 배경 */
   --ink:    #16143a;   /* 본문 글자 */
   --ink-2:  #6a6788;   /* 보조 글자 */
@@ -37,7 +36,7 @@ body {
   position: relative;
   height: var(--hero-scroll);
   /* JS 가 갱신하는 진행도 (0~1). 기본값은 애니메이션 시작 상태 */
-  --pour: 0; --level: 0; --splash: 0; --jet: 0; --zoom: 1; --wash: 0; --end: 0; --copy: 1; --cue: 1;
+  --pour: 0; --splash: 0; --tip: 1; --zoom: 1; --wash: 0; --end: 0; --copy: 1; --cue: 1;
 }
 
 .hero__stage {
@@ -59,51 +58,26 @@ body {
   display: block;
 }
 
-/* 줌인 : 음료 줄기(400,300) 를 중심으로 확대 */
+/* 줌인 : 음료 줄기를 중심으로 확대 */
 #zoom {
   transform-box: view-box;
-  transform-origin: 407px 347px;   /* 음료 줄기 위의 한 점 */
+  transform-origin: 396px 300px;
   transform: scale(var(--zoom));
   will-change: transform;
 }
 
-/* 선으로 그린 부분 (잔·손) */
-.art .ln {
-  fill: var(--navy);
-  stroke: var(--cream);
-  stroke-width: 11;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+/* 포스터 선화 (크림색 면으로 그려짐) */
+.art .ink { fill: var(--cream); fill-rule: evenodd; }
 
-/* 채워진 부분 (음료) */
-.art .fill { fill: var(--milk); }
-
-
-/* 줄기 : 클립 사각형의 아랫변이 화면 위(-110) → 잔 수면(560) 까지 내려옴 */
-#pourRect {
+/* 줄기 : 클립 사각형의 아랫변이 화면 위 → 잔 입구까지 내려옴 */
+#pourRect, #pourTip {
   transform-box: view-box;
-  transform: translateY(calc(-770px + var(--pour) * 730px));
+  transform: translateY(calc(-650px + var(--pour) * 590px));
 }
+#pourTip { opacity: var(--tip); }
 
-/* 채움 없이 선만 그리는 것들 */
-.art .ln--line { fill: none; stroke-width: 9; }
-.art .ln--over { fill: none; }
-
-/* 줄기 끝 방울 : 줄기와 같은 만큼 내려옴 */
-#pourTip {
-  transform-box: view-box;
-  transform: translateY(calc(-770px + var(--pour) * 730px));
-}
-
-/* 잔 속 음료 : 아래에서 위로 차오름 */
-#liquid {
-  transform-box: view-box;
-  transform: translateY(calc((1 - var(--level)) * 300px));
-}
-
+/* 잔에 이는 물결 */
 #splash { opacity: var(--splash); }
-#jet { opacity: var(--jet); }
 
 /* ---- 화면을 덮는 크림색 ---- */
 .hero__wash {
@@ -120,7 +94,7 @@ body {
   text-align: center;
   color: var(--cream);
   padding: 0 24px;
-  margin-bottom: 42vh;          /* 잔 위쪽에 배치 */
+  margin-bottom: 46vh;          /* 잔 위쪽에 배치 */
   opacity: var(--copy);
   pointer-events: none;
 }
@@ -375,7 +349,7 @@ body {
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .hero { height: 100svh; --pour: 1; --level: 1; --splash: 1; --jet: 1; }
+  .hero { height: 100svh; --pour: 0; --splash: 0; --tip: 0; }  /* 빈 잔 상태로 고정 */
   #zoom { transform: none; }
   .hero__cue { animation: none; }
   .item { opacity: 1; transform: none; transition: none; }
