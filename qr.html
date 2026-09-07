@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR 코드 만들기</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Malgun Gothic", sans-serif;
+           background:#f5f1ea; color:#2b2019; margin:0; padding:40px 20px; }
+    .box { max-width:420px; margin:0 auto; text-align:center; }
+    h1 { font-size:1.2rem; letter-spacing:.05em; }
+    p  { font-size:.85rem; color:#7a6a5d; line-height:1.7; }
+    input { width:100%; padding:12px 14px; font-size:1rem; border:1px solid #e2d8ca;
+            border-radius:10px; background:#fffdf9; margin:14px 0; }
+    button { padding:12px 22px; font-size:.95rem; border:0; border-radius:10px;
+             background:#8c5a35; color:#fff; cursor:pointer; }
+    #out { margin-top:28px; background:#fff; padding:18px; border-radius:14px;
+           display:inline-block; min-height:20px; }
+    #out img, #out canvas { display:block; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>메뉴판 QR 코드</h1>
+    <p>사이트를 배포한 뒤 그 주소를 넣고 생성하세요.<br>
+       이미지를 길게 눌러 저장 → 인쇄해서 테이블에 두면 됩니다.</p>
+    <input id="url" type="url" placeholder="https://사용자이름.github.io/저장소이름/">
+    <button id="go">QR 생성</button>
+    <div id="out"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    var out = document.getElementById("out");
+    document.getElementById("go").addEventListener("click", function () {
+      var v = document.getElementById("url").value.trim();
+      out.innerHTML = "";
+      if (!v) { out.textContent = "주소를 입력하세요."; return; }
+      if (typeof QRCode === "undefined") { out.textContent = "QR 라이브러리를 불러오지 못했습니다 (인터넷 연결 확인)."; return; }
+      new QRCode(out, { text: v, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+    });
+  </script>
+</body>
+</html>

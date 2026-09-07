@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" preserveAspectRatio="xMidYMid slice">
+  <!-- 임시 플레이스홀더. 실제 사진(assets/hero.jpg)을 받으면 교체하고
+       index.html 의 img src 를 assets/hero.jpg 로 바꾸면 됩니다. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#4a3423"/>
+      <stop offset="55%"  stop-color="#2c1e14"/>
+      <stop offset="100%" stop-color="#15100b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="38%" r="55%">
+      <stop offset="0%"   stop-color="#c89a68" stop-opacity=".35"/>
+      <stop offset="100%" stop-color="#c89a68" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="1000" fill="url(#g)"/>
+  <rect width="800" height="1000" fill="url(#glow)"/>
+
+  <g stroke="#e6cfae" stroke-width="7" fill="none" opacity=".8">
+    <!-- 컵 -->
+    <path d="M258 452 h250 v112 a125 125 0 0 1 -125 125 a125 125 0 0 1 -125 -125 z"/>
+    <!-- 손잡이 -->
+    <path d="M512 480 a62 62 0 0 1 0 104"/>
+    <!-- 받침 -->
+    <path d="M214 706 h340"/>
+    <!-- 김 -->
+    <path d="M340 400 c22 -28 -22 -54 0 -84" stroke-width="6" opacity=".65"/>
+    <path d="M400 388 c22 -30 -22 -58 0 -90" stroke-width="6" opacity=".5"/>
+    <path d="M460 400 c22 -28 -22 -54 0 -84" stroke-width="6" opacity=".65"/>
+  </g>
+
+  <text x="400" y="820" text-anchor="middle" fill="#e6cfae" opacity=".45"
+        font-family="system-ui, sans-serif" font-size="24" letter-spacing="6">
+    HERO IMAGE PLACEHOLDER
+  </text>
+</svg>
