@@ -31,7 +31,7 @@ window.CAFE = {
             { fr: "Espresso",              ko: "에스프레소",      price: "4.0" },
             { fr: "Americano",             ko: "아메리카노",      price: "4.0" },
             { fr: "Allongé",               ko: "알롱제",          price: "4.0" },
-            { fr: "Macchiato",             ko: "마끼아또",        price: "4.5" },
+            { fr: "Macchiato",             ko: "마끼야또",        price: "4.5" },
             { fr: "Cortado",               ko: "콜타도",          price: "5.0" },
             { fr: "Cappuccino",            ko: "카푸치노",        price: "5.5" },
             { fr: "Mocha",                 ko: "모카",            price: "6.0" },

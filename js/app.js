@@ -80,18 +80,29 @@
     return n;
   }
 
-  /* 종이 메뉴판의 남색 얼룩 모양 */
-  function blob() {
-    var s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    s.setAttribute("class", "group__blob");
-    s.setAttribute("viewBox", "0 0 320 130");
-    s.setAttribute("aria-hidden", "true");
-    var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    p.setAttribute("fill", "#1e1a4b");
-    p.setAttribute("d", "M0 20 C40 -6 96 -4 150 8 C206 20 258 6 300 22 C322 30 320 62 312 86 " +
-                        "C302 116 264 130 210 128 C150 126 96 130 48 126 C14 122 0 104 0 76 Z");
-    s.appendChild(p);
-    return s;
+  /* 종이 메뉴판 1면의 남색 얼룩 (표지) */
+  function renderCover(title) {
+    var cover = document.getElementById("cover");
+    if (!cover) return;
+
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "cover__blob");
+    svg.setAttribute("viewBox", "0 0 400 180");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("aria-hidden", "true");
+    var path = document.createElementNS(NS, "path");
+    path.setAttribute("fill", "#1e1a4b");
+    path.setAttribute("d", "M0 0 H400 V74 C374 80 360 112 326 126 " +
+                           "C292 140 258 130 222 140 C184 151 146 160 110 152 " +
+                           "C72 143 36 124 0 130 Z");
+    svg.appendChild(path);
+
+    var inner = el("div", "cover__inner");
+    inner.appendChild(el("h2", "cover__title", title));
+
+    cover.appendChild(svg);
+    cover.appendChild(inner);
   }
 
   function renderMenu(data) {
@@ -101,13 +112,14 @@
     data.groups.forEach(function (group, gi) {
       var g = el("section", "group");
 
-      var head = el("div", "group__head");
-      if (gi === 0) {                       /* 첫 묶음만 얼룩 위에 (종이와 동일) */
-        head.appendChild(blob());
-        g.classList.add("group--on-blob");
+      /* 첫 묶음의 제목은 표지 얼룩 위에 (종이 1면과 동일) */
+      if (gi === 0) {
+        renderCover(group.title);
+      } else {
+        var head = el("div", "group__head");
+        head.appendChild(el("h2", "group__title", group.title));
+        g.appendChild(head);
       }
-      head.appendChild(el("h2", "group__title", group.title));
-      g.appendChild(head);
 
       group.sections.forEach(function (section) {
         var sec = el("section", "section");

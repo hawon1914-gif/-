@@ -217,7 +217,6 @@ body {
   position: relative;
   z-index: 1;
   background: var(--paper);
-  padding-top: 8vh;
 }
 
 .wrap {
@@ -226,27 +225,46 @@ body {
   padding: 0 26px;
 }
 
-/* ---- 큰 묶음 (BOISSONS / ALIMENTS) ---- */
+/* ---- 표지 : 종이 메뉴판 1면의 남색 얼룩 ---- */
+.cover {
+  position: relative;
+  height: clamp(190px, 34vh, 300px);
+  margin-bottom: 6px;
+}
+
+.cover__blob {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.cover__inner {
+  position: absolute;
+  left: 50%;
+  bottom: 27%;
+  translate: -50% 0;
+  width: 100%;
+  max-width: var(--max);
+  padding: 0 26px;
+}
+
+.cover__title {
+  margin: 0;
+  font-family: var(--font-en);
+  font-weight: 700;
+  font-size: clamp(2.1rem, 11vw, 3.2rem);
+  letter-spacing: .01em;
+  color: var(--cream);
+}
+
+/* ---- 큰 묶음 (ALIMENTS 등) ---- */
 .group { margin-bottom: 34px; }
 
-.group__head {
-  position: relative;
-  margin: 0 0 34px;
-  padding: 26px 0 22px;
-}
-
-.group__blob {
-  position: absolute;
-  left: -6%;
-  top: 0;
-  width: 62%;
-  min-width: 230px;
-  z-index: 0;
-}
+.group__head { margin: 0 0 30px; padding-top: 24px; }
 
 .group__title {
-  position: relative;
-  z-index: 1;
   margin: 0;
   font-family: var(--font-en);
   font-weight: 700;
@@ -254,7 +272,6 @@ body {
   letter-spacing: .01em;
   color: var(--navy);
 }
-.group--on-blob .group__title { color: var(--cream); }
 
 /* ---- 카테고리 ---- */
 .section { margin-bottom: 40px; }
@@ -292,6 +309,7 @@ body {
   letter-spacing: .015em;
   text-transform: uppercase;
   line-height: 1.4;
+  word-break: keep-all;   /* 한글이 낱자 단위로 끊기지 않게 */
 }
 
 .item__ko {
