@@ -318,13 +318,13 @@ body {
   display: block;
   width: 100%;
   height: 52px;
+  margin-top: 30px;      /* 여백은 물결 위쪽에 준다 */
   margin-bottom: -1px;
 }
 
 .foot {
   position: relative;
-  margin-top: 30px;
-  padding: 46px 0 56px;
+  padding: 46px 0 56px;   /* 물결과 붙어야 하므로 위 여백 없음 */
   text-align: center;
   color: var(--cream);
   background: var(--navy);
