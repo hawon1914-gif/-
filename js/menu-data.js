@@ -140,5 +140,5 @@ window.CAFE = {
   ],
 
   /* ✱ 표시 설명 / 안내 문구 */
-  notice: "✱ SIGNATURE\n메뉴와 가격은 변동될 수 있습니다"
+  notice: "✱ SIGNATURE\nMenu and prices are subject to change\n메뉴와 가격은 변동될 수 있습니다"
 };
