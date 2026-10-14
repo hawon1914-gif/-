@@ -100,8 +100,9 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
   let car = null;
   let main = null; // 뒤차(측정 대상)
   let lead = null; // 앞차
-  let imported = null;
-  let importedYaw = 0;
+  let imported = null; // 원본 glTF 장면(복제해서 앞차/뒤차에 붙인다)
+  let importFlip = { flipLong: false, flipUp: false };
+  let importInfo = '';
   let grid = null;
   let field = null;
   let worker = null;
@@ -154,14 +155,14 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
 
   function rebuild() {
     car = getCar();
-    if (imported?.parent) imported.parent.remove(imported);
     [main, lead].forEach((r) => { if (r) { scene.remove(r); disposeCar(r); } });
     main = buildCar(car, { opacity: opts.ghost ? 0.35 : 1 });
-    if (imported) attachImported();
+    if (imported) attachImported(main);
     scene.add(main);
     lead = null;
     if (opts.leader) {
       lead = buildCar(car, { opacity: opts.ghost ? 0.35 : 1 });
+      if (imported) attachImported(lead);
       scene.add(lead);
     }
     grid = gridFor();
@@ -213,7 +214,7 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
       if (lead) roots.push({ root: lead, id: 2 });
       const m = rasterize(roots, grid, opts.section);
       worker.postMessage({ type: 'mask', solid: m.solid.buffer, wux: m.wux.buffer, wuy: m.wuy.buffer }, [m.solid.buffer, m.wux.buffer, m.wuy.buffer]);
-      status.textContent = `격자 ${grid.NX}×${grid.NY}, 칸 크기 ${(grid.dx * 100).toFixed(1)} cm · 변환 ${(performance.now() - t0).toFixed(0)} ms`;
+      status.textContent = `격자 ${grid.NX}×${grid.NY}, 칸 크기 ${(grid.dx * 100).toFixed(1)} cm · 변환 ${(performance.now() - t0).toFixed(0)} ms${importInfo}`;
     });
   }
 
@@ -233,33 +234,42 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
   }
 
   // ---------- glTF 불러오기 ----------
-  function attachImported() {
-    const body = main.userData.body;
-    body.children.slice().forEach((c) => body.remove(c));
-    main.userData.wheels.visible = false;
-    fitImportedModel(imported, car, importedYaw);
-    body.add(imported);
+  function attachImported(root) {
+    const { body, wheels } = root.userData;
+    for (const g of [body, wheels]) {
+      g.children.slice().forEach((c) => {
+        c.traverse((o) => o.geometry?.dispose());
+        g.remove(c);
+      });
+    }
+    const fit = fitImportedModel(imported.clone(true), car, importFlip);
+    fit.bodyGroup.traverse((o) => { o.userData.shared = true; });
+    fit.wheelGroup.traverse((o) => { o.userData.shared = true; });
+    body.add(fit.bodyGroup);
+    wheels.add(fit.wheelGroup);
+    root.userData.imported = true;
+    importInfo = ` · 불러온 모델: 바퀴 부품 ${fit.wheels}개 분리${fit.wheels ? '' : ' (바퀴를 못 찾아 차 길이에 맞춤)'}`;
   }
 
-  async function loadModel(file) {
-    status.textContent = `${file.name} 불러오는 중…`;
-    const buf = await file.arrayBuffer();
+  async function loadModel(source) {
+    const name = source.name ?? source;
+    status.textContent = `${name} 불러오는 중…`;
+    const buf = typeof source === 'string' ? await (await fetch(source)).arrayBuffer() : await source.arrayBuffer();
     const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej));
     imported = gltf.scene;
-    importedYaw = 0;
+    importFlip = { flipLong: false, flipUp: false };
     rebuild();
   }
 
-  function rotateModel() {
+  function flipModel(key) {
     if (!imported) return;
-    importedYaw = (importedYaw + 1) % 4;
-    imported.position.set(0, 0, 0);
-    imported.scale.setScalar(1);
+    importFlip[key] = !importFlip[key];
     rebuild();
   }
 
   function clearModel() {
     imported = null;
+    importInfo = '';
     rebuild();
   }
 
@@ -497,6 +507,6 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
       if (v) { resize(); last = performance.now(); }
     },
     themeChanged() { paintGround(); drawField(); drawArrows(); },
-    loadModel, rotateModel, clearModel,
+    loadModel, flipModel, clearModel,
   };
 }

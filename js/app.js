@@ -466,14 +466,26 @@ function bindTunnel() {
   $('tn-streaks').addEventListener('change', (e) => set({ streaks: e.target.checked }));
   $('tn-ghost').addEventListener('change', (e) => set({ ghost: e.target.checked }));
   $('tn-reset').addEventListener('click', () => tunnel?.resetFlow());
-  $('tn-rotate').addEventListener('click', () => tunnel?.rotateModel());
-  $('tn-default').addEventListener('click', () => tunnel?.clearModel());
+  $('tn-flip-long').addEventListener('click', () => tunnel?.flipModel('flipLong'));
+  $('tn-flip-up').addEventListener('click', () => tunnel?.flipModel('flipUp'));
+  const loadFailed = (err) => {
+    $('tn-status').textContent = `모델을 읽지 못했습니다: ${err.message || err}. .glb(바이너리 glTF) 파일인지 확인하세요.`;
+  };
+  $('tn-model').addEventListener('change', (e) => {
+    if (!tunnel) return;
+    $('tn-credit').hidden = e.target.value !== 'carconcept';
+    if (e.target.value === 'procedural') tunnel.clearModel();
+    else if (e.target.value === 'carconcept') tunnel.loadModel('assets/models/CarConcept.glb').catch(loadFailed);
+  });
   $('tn-file').addEventListener('change', (e) => {
     const file = e.target.files?.[0];
     if (!file || !tunnel) return;
-    tunnel.loadModel(file).catch((err) => {
-      $('tn-status').textContent = `모델을 읽지 못했습니다: ${err.message || err}. .glb(바이너리 glTF) 파일인지 확인하세요.`;
-    });
+    $('tn-credit').hidden = true;
+    const opt = $('tn-model').querySelector('option[value=file]');
+    opt.disabled = false;
+    opt.textContent = `내 파일: ${file.name}`;
+    $('tn-model').value = 'file';
+    tunnel.loadModel(file).catch(loadFailed);
     e.target.value = '';
   });
 }

@@ -247,10 +247,14 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
         <span class="ctl"><input id="tn-streaks" type="checkbox" checked><label for="tn-streaks">유선</label></span>
         <span class="ctl"><input id="tn-ghost" type="checkbox"><label for="tn-ghost">차체 반투명</label></span>
         <button id="tn-reset" type="button">유동 초기화</button>
-        <label class="file-btn" for="tn-file">내 3D 모델 (.glb)<input id="tn-file" type="file" accept=".glb,.gltf,model/gltf-binary"></label>
-        <button id="tn-rotate" type="button">모델 90° 회전</button>
-        <button id="tn-default" type="button">기본 모델</button>
       </div>
+      <div class="ctl-group">
+        <span class="ctl"><label for="tn-model">3D 모델</label><select id="tn-model"><option value="procedural">차종별 기본 형상</option><option value="carconcept">Car Concept (공개 모델, CC BY 4.0)</option><option value="file" disabled>내 파일</option></select></span>
+        <label class="file-btn" for="tn-file">내 .glb 불러오기<input id="tn-file" type="file" accept=".glb,model/gltf-binary"></label>
+        <button id="tn-flip-long" type="button">앞뒤 반전</button>
+        <button id="tn-flip-up" type="button">위아래 반전</button>
+      </div>
+      <p class="note" id="tn-credit" hidden>3D 모델: <a href="https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept" target="_blank" rel="noopener">Car Concept</a> — Eric Chadwick, © 2024 Darmstadt Graphics Group GmbH, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. 원본은 Unity Fan의 퍼블릭 도메인(CC0) 모델이며, 이 실험실에서는 크기·방향을 맞추고 바퀴를 분리해 사용합니다. 크기는 선택한 차의 휠베이스에 맞춰 늘리거나 줄입니다.</p>
       <dl class="hud" id="tn-hud"><div><dt>준비 중</dt><dd>3D 엔진과 유체 해석기를 불러오는 중입니다.</dd></div></dl>
       <figure>
         <figcaption>2D 풍동 단면 <span>격자 볼츠만(LBM) 실시간 해석 · 차 기준 좌표계, 노면과 바퀴가 함께 움직임</span></figcaption>

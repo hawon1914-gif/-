@@ -284,33 +284,113 @@ export function setAttitude(root, hFmm, hRmm) {
 
 export function disposeCar(root) {
   root.traverse((o) => {
-    if (o.geometry) o.geometry.dispose();
+    // 불러온 모델의 지오메트리는 원본과 공유하므로 남겨 둔다
+    if (o.geometry && !o.userData.shared) o.geometry.dispose();
   });
   Object.values(root.userData.mats ?? {}).forEach((m) => m.dispose());
 }
 
-// 사용자가 불러온 glTF 모델을 차체로 쓴다: 길이를 맞추고 바닥을 y=0에 둔다.
-export function fitImportedModel(object, car, yawSteps = 0) {
-  object.rotation.set(0, (yawSteps * Math.PI) / 2, 0);
-  object.updateMatrixWorld(true);
+// 불러온 glTF 모델을 차체/바퀴로 나눠 이 좌표계에 맞춘다.
+// - 가장 긴 축을 길이(x), 가장 짧은 축을 높이(y)로 자동 정렬
+// - 이름에 wheel/tire/rim/brake가 들어간 부품은 바퀴(언스프렁)로 분리
+// - 바퀴가 있으면 휠베이스를 프리셋에 맞추고 앞차축을 x=0에 둔다
+const WHEEL_RE = /wheel|tire|tyre|rim|brake/i;
+const NOT_WHEEL_RE = /steer/i;
+
+function isWheelMesh(o) {
+  for (let n = o; n; n = n.parent) {
+    if (n.name && NOT_WHEEL_RE.test(n.name)) return false;
+    if (n.name && WHEEL_RE.test(n.name)) return true;
+  }
+  return false;
+}
+
+export function fitImportedModel(object, car, { flipLong = false, flipUp = false } = {}) {
+  const holder = new THREE.Group();
+  holder.add(object);
+  holder.updateMatrixWorld(true);
   let box = new THREE.Box3().setFromObject(object);
-  const size = box.getSize(new THREE.Vector3());
-  const s = car.length / Math.max(size.x, size.z);
-  object.scale.setScalar(s);
-  object.updateMatrixWorld(true);
-  box = new THREE.Box3().setFromObject(object);
-  object.position.x += -car.frontOverhang - box.min.x;
-  object.position.y += -box.min.y;
-  object.position.z += -(box.min.z + box.max.z) / 2;
-  object.traverse((o) => {
-    if (o.isMesh) {
-      o.userData.part = 'body';
-      o.castShadow = true;
-      const ms = Array.isArray(o.material) ? o.material : [o.material];
-      ms.forEach((m) => { m.side = THREE.DoubleSide; });
+  const size = box.getSize(new THREE.Vector3()).toArray();
+  const order = [0, 1, 2].sort((a, b) => size[b] - size[a]);
+  const axis = (i) => new THREE.Vector3(...[0, 1, 2].map((k) => (k === i ? 1 : 0)));
+  const eLong = axis(order[0]);
+  const eUp = axis(order[2]);
+  const eSide = new THREE.Vector3().crossVectors(eLong, eUp);
+  // 모델 축 → 장면 축 회전 (행렬의 행이 모델 기준 단위벡터)
+  const m = new THREE.Matrix4().set(
+    eLong.x, eLong.y, eLong.z, 0,
+    eUp.x, eUp.y, eUp.z, 0,
+    eSide.x, eSide.y, eSide.z, 0,
+    0, 0, 0, 1,
+  );
+  const q = new THREE.Quaternion().setFromRotationMatrix(m);
+  // 부품 이름(헤드라이트·앞유리 vs 테일라이트·리어)으로 앞쪽을 찾아 노즈가 -x를 향하게 한다
+  holder.quaternion.copy(q);
+  holder.updateMatrixWorld(true);
+  const centerX = (re) => {
+    const xs = [];
+    object.traverse((o) => {
+      if (!o.isMesh) return;
+      for (let n = o; n; n = n.parent) {
+        if (n.name && re.test(n.name)) {
+          xs.push(new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).x);
+          return;
+        }
+      }
+    });
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  };
+  const fx = centerX(/head|windshield|windscreen|front|hood|bonnet/i);
+  const rx = centerX(/tail|rear|back/i);
+  if (fx !== null && rx !== null && fx > rx) flipLong = !flipLong;
+  if (flipLong) q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
+  if (flipUp) q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI));
+  holder.quaternion.copy(q);
+  holder.updateMatrixWorld(true);
+
+  const meshes = [];
+  object.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  const wheelMeshes = meshes.filter(isWheelMesh);
+  const boxOf = (list) => list.reduce((b, o) => b.expandByObject(o), new THREE.Box3());
+
+  box = boxOf(meshes);
+  const midX = (box.min.x + box.max.x) / 2;
+  let xf = box.min.x + car.frontOverhang * ((box.max.x - box.min.x) / car.length);
+  let scale = car.length / (box.max.x - box.min.x);
+  if (wheelMeshes.length >= 2) {
+    const front = wheelMeshes.filter((o) => new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).x < midX);
+    const rear = wheelMeshes.filter((o) => !front.includes(o));
+    if (front.length && rear.length) {
+      xf = boxOf(front).getCenter(new THREE.Vector3()).x;
+      const xr = boxOf(rear).getCenter(new THREE.Vector3()).x;
+      scale = car.wheelbase / (xr - xf);
     }
-  });
-  return object;
+  }
+  const ground = (wheelMeshes.length ? boxOf(wheelMeshes) : box).min.y;
+  const zc = (box.min.z + box.max.z) / 2;
+  holder.scale.setScalar(scale);
+  holder.position.set(-xf * scale, -ground * scale, -zc * scale);
+  holder.updateMatrixWorld(true);
+
+  const bodyGroup = new THREE.Group();
+  const wheelGroup = new THREE.Group();
+  for (const w of wheelMeshes) {
+    wheelGroup.attach(w);
+    const b = new THREE.Box3().setFromObject(w);
+    const c = b.getCenter(new THREE.Vector3());
+    w.userData = { part: 'wheel', cx: c.x, cy: c.y, r: (b.max.y - b.min.y) / 2 };
+  }
+  const bodyMeshes = meshes.filter((o) => !wheelMeshes.includes(o));
+  const bodyMinY = bodyMeshes.length ? boxOf(bodyMeshes).min.y : 0;
+  bodyGroup.attach(holder);
+  // 차체 로컬 y=0이 차체 바닥이 되도록 (모델 자체의 지상고는 버리고 프리셋 라이드하이트를 쓴다)
+  bodyGroup.position.y = -bodyMinY;
+  for (const o of bodyMeshes) o.userData = { part: 'body' };
+  for (const o of meshes) {
+    o.castShadow = true;
+    (Array.isArray(o.material) ? o.material : [o.material]).forEach((mat) => { mat.side = THREE.DoubleSide; });
+  }
+  return { bodyGroup, wheelGroup, wheels: wheelMeshes.length, scale };
 }
 
 // 풍동 격자에 넣을 고체 마스크. 위에서 아래로 광선을 쏴서 메시 내부 구간을 칠한다.
@@ -328,6 +408,8 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
 
   roots.forEach(({ root, id }) => {
     const { car, body } = root.userData;
+    // 불러온 모델은 보통 닫힌 솔리드가 아니라 겉면(껍데기)이라 내부 판정 대신 외곽 포락선을 쓴다
+    const envelope = !!root.userData.imported;
     root.updateMatrixWorld(true);
     // 앞/뒤 차축 위치의 실제 라이드하이트 → 과장된 격자 틈으로 옮기는 선형 보정 Δ(x)
     const axleF = new THREE.Vector3(0, 0, 0).applyMatrix4(body.matrixWorld);
@@ -342,13 +424,29 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
       if (o.userData.part === 'wheel' && mode === 'center') return;
       meshes.push({ mesh: o, bb: new THREE.Box3().setFromObject(o), wheel: o.userData.part === 'wheel' });
     });
+    const fill = (gx, ylo, yhi, shift) => {
+      const g0 = Math.max(1, Math.round((ylo + shift) / dx));
+      const g1 = Math.min(NY - 2, Math.max(g0, Math.round((yhi + shift) / dx)));
+      for (let gy = g0; gy <= g1; gy++) {
+        const c = gy * NX + gx;
+        solid[c] = id;
+        wux[c] = 0;
+        wuy[c] = 0;
+      }
+    };
     for (let gx = 0; gx < NX; gx++) {
       const x = x0 + (gx + 0.5) * dx;
       for (const z of zs) {
+        let envLo = Infinity;
+        let envHi = -Infinity;
         for (const { mesh, bb, wheel } of meshes) {
           if (x < bb.min.x || x > bb.max.x || z < bb.min.z || z > bb.max.z) continue;
           ray.set(new THREE.Vector3(x, top, z), down);
           const hits = ray.intersectObject(mesh, false).map((h) => h.point.y);
+          if (envelope && !wheel) {
+            for (const y of hits) { envLo = Math.min(envLo, y); envHi = Math.max(envHi, y); }
+            continue;
+          }
           if (hits.length < 2) continue;
           const spans = [];
           if (hits.length % 2 === 0) for (let k = 0; k < hits.length; k += 2) spans.push([hits[k + 1], hits[k]]);
@@ -362,7 +460,8 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
               if (wheel) {
                 // 바퀴 표면 속도: 접지점이 노면과 같은 속도가 되도록 회전
                 const { cx, cy, r } = mesh.userData;
-                const wpos = new THREE.Vector3(cx, cy, 0).applyMatrix4(mesh.parent.matrixWorld);
+                // 바퀴 중심은 바퀴 그룹(차 루트 기준) 좌표로 저장되어 있다
+                const wpos = new THREE.Vector3(cx, cy, 0).applyMatrix4(root.userData.wheels.matrixWorld);
                 const om = u0 / (r / dx);
                 if (!solid[c] || (solid[c] & 7) !== id) {
                   wux[c] = -om * (gy - wpos.y / dx);
@@ -377,6 +476,7 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
             }
           }
         }
+        if (envHi > envLo) fill(gx, envLo, envHi, lift(x));
       }
     }
   });
