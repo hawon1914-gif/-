@@ -251,10 +251,19 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
     importInfo = ` · 불러온 모델: 바퀴 부품 ${fit.wheels}개 분리${fit.wheels ? '' : ' (바퀴를 못 찾아 차 길이에 맞춤)'}`;
   }
 
+  // 배포 호스팅이 .glb 확장자를 서비스하지 않는 경우를 위해 같은 파일을 .wasm 이름으로도 시도한다
+  async function fetchModel(url) {
+    for (const u of [url, url.replace(/\.glb$/, '.wasm')]) {
+      const res = await fetch(u).catch(() => null);
+      if (res?.ok) return res.arrayBuffer();
+    }
+    throw new Error(`${url}을(를) 받을 수 없습니다`);
+  }
+
   async function loadModel(source) {
     const name = source.name ?? source;
     status.textContent = `${name} 불러오는 중…`;
-    const buf = typeof source === 'string' ? await (await fetch(source)).arrayBuffer() : await source.arrayBuffer();
+    const buf = typeof source === 'string' ? await fetchModel(source) : await source.arrayBuffer();
     const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej));
     imported = gltf.scene;
     importFlip = { flipLong: false, flipUp: false };
