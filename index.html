@@ -1,0 +1,286 @@
+<meta charset="utf-8">
+<title>Aero Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 왼쪽 셋업 시트(파라미터) + 오른쪽 텔레메트리 작업대(탭별 실험). 폰에서는 위아래로 쌓인다. */
+:root {
+  --bg: #e9edf1;
+  --panel: #f8fafb;
+  --line: #cbd3db;
+  --grid: #dfe5ea;
+  --ink: #17212b;
+  --ink-2: #5b6876;
+  --accent: #e2581d;
+  --front: #1f6fd1;
+  --rear: #d4890f;
+  --drag: #c8323c;
+  --tire: #2f3a45;
+  --body: #c9d3dd;
+  --ok: #2c8a57;
+  --warn: #c0661a;
+  --c1: #1f6fd1; --c2: #7a52c7; --c3: #2c8a57; --c4: #e2581d; --c5: #6b7785;
+  --font-display: "Barlow Condensed", "IBM Plex Sans KR", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --panel: #182029; --line: #2b3642; --grid: #232d38; --ink: #e4eaf0; --ink-2: #8b98a6;
+    --accent: #ff7a3d; --front: #5aa2ff; --rear: #f0b23a; --drag: #ff6470; --tire: #556270; --body: #2c3946;
+    --ok: #4cc283; --warn: #f09a4a;
+    --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --panel: #182029; --line: #2b3642; --grid: #232d38; --ink: #e4eaf0; --ink-2: #8b98a6;
+  --accent: #ff7a3d; --front: #5aa2ff; --rear: #f0b23a; --drag: #ff6470; --tire: #556270; --body: #2c3946;
+  --ok: #4cc283; --warn: #f09a4a;
+  --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 32px;
+}
+header.top {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; padding-block: 18px 14px;
+  border-bottom: 2px solid var(--ink); margin-bottom: 16px;
+}
+.brand { display: flex; flex-direction: column; gap: 0; }
+.brand h1 { font-family: var(--font-display); font-weight: 700; font-size: 34px; line-height: 1; letter-spacing: 0.02em; margin: 0; text-transform: uppercase; }
+.brand h1 b { color: var(--accent); }
+.brand span { font-size: 12px; color: var(--ink-2); }
+.env { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-left: auto; font-size: 13px; }
+.env label { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.env input[type=number] { width: 74px; }
+.env .rho { font-family: var(--font-data); color: var(--ink); }
+input[type=number], select {
+  font: 500 13px var(--font-data); color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 3px; padding: 4px 6px; min-width: 0;
+}
+select { font-family: var(--font-body); }
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  font: 600 13px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 3px; padding: 5px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--ink-2); }
+.layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+aside.setup { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 14px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: max(8px, env(safe-area-inset-top, 0px)); max-height: calc(100vh - 16px); overflow: auto; }
+@media (max-width: 860px) { aside.setup { position: static; max-height: none; } }
+.eyebrow { font: 600 11px var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.setup .car-row { display: flex; gap: 8px; }
+.setup .car-row select { flex: 1; }
+.setup .toggle { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.setup .toggle small { display: block; color: var(--ink-2); font-size: 12px; }
+details { border-top: 1px solid var(--line); padding-top: 6px; }
+summary { font: 600 13px var(--font-body); cursor: pointer; padding-block: 4px; }
+.param-grid { display: flex; flex-direction: column; gap: 4px; padding-block: 6px 4px; }
+.param { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12.5px; }
+.param .pl { color: var(--ink-2); min-width: 0; }
+.param.changed .pl { color: var(--accent); font-weight: 600; }
+.param .pv { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.param input { width: 78px; text-align: right; }
+.param .unit { font: 11px var(--font-data); color: var(--ink-2); width: 34px; }
+.hint { font-size: 12px; color: var(--ink-2); margin: 0; }
+
+.bench { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.bench-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+#car-name { font-family: var(--font-display); font-size: 26px; font-weight: 600; margin: 0; text-wrap: balance; }
+[role=tablist] { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+[role=tab] { background: none; border: none; border-bottom: 3px solid transparent; border-radius: 0; padding: 8px 14px; color: var(--ink-2); font: 600 14px var(--font-body); white-space: nowrap; }
+[role=tab][aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabpanel { display: flex; flex-direction: column; gap: 16px; }
+.lede { margin: 0; color: var(--ink-2); max-width: 70ch; }
+
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.kpis.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) { .kpis, .kpis.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { background: var(--panel); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; border-top: 3px solid transparent; }
+.kpi.warn { border-top-color: var(--warn); }
+.kpi.ok { border-top-color: var(--ok); }
+.kl { font: 600 11px var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.kv { font: 600 26px/1.15 var(--font-display); font-variant-numeric: tabular-nums; }
+.kv small { font: 500 12px var(--font-data); color: var(--ink-2); margin-left: 3px; }
+.kn { font-size: 12px; color: var(--ink-2); }
+.kpi.warn .kn { color: var(--warn); }
+
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 16px; }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 10px 4px; min-width: 0; }
+figcaption { font: 600 13px var(--font-body); margin-bottom: 4px; }
+figcaption span { font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.cw { position: relative; width: 100%; }
+canvas { display: block; touch-action: pan-y; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 13px; }
+.controls label { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.controls input[type=number] { width: 72px; }
+.replay { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.replay input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
+#replay-readout { font: 12px var(--font-data); color: var(--ink-2); }
+.note { font-size: 13px; color: var(--ink-2); margin: 0; }
+
+.table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+th { font: 600 11px var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid var(--line); }
+td { font-family: var(--font-data); font-size: 12.5px; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child { text-align: left; font-family: var(--font-body); }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
+
+.model { max-width: 75ch; display: flex; flex-direction: column; gap: 14px; }
+.model h3 { font: 600 20px var(--font-display); margin: 6px 0 0; letter-spacing: 0.02em; }
+.model p, .model li { margin: 0; }
+.model ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.model code { font: 12.5px var(--font-data); background: var(--panel); border: 1px solid var(--line); padding: 1px 5px; border-radius: 3px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<header class="top">
+  <div class="brand">
+    <h1>Aero<b>/</b>Lab</h1>
+    <span>심레이싱 공기역학 · 하중 이동 실험실</span>
+  </div>
+  <div class="env">
+    <label for="env-temp">기온 <input id="env-temp" type="number" value="20" step="1"> °C</label>
+    <label for="env-press">기압 <input id="env-press" type="number" value="1013.25" step="1"> hPa</label>
+    <span>ρ <span class="rho" id="env-rho">1.204</span> kg/m³</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="setup" aria-label="셋업 시트">
+    <span class="eyebrow">셋업 시트</span>
+    <div class="car-row">
+      <label for="car-select" hidden>차량</label>
+      <select id="car-select"></select>
+      <button id="reset-car" type="button" title="프리셋 값으로 되돌리기">초기화</button>
+    </div>
+    <label class="toggle" for="platform">
+      <input id="platform" type="checkbox" checked>
+      <span>라이드하이트 민감도 적용<small>끄면 다운포스가 차 자세와 무관한 강체 에어로가 됩니다.</small></span>
+    </label>
+    <p class="hint">모든 값은 공개 자료 기반 추정치입니다. 주황색 항목은 프리셋에서 바꾼 값입니다.</p>
+    <div id="params"></div>
+  </aside>
+
+  <main class="bench">
+    <div class="bench-head">
+      <h2 id="car-name">F1</h2>
+    </div>
+    <div role="tablist" aria-label="실험">
+      <button role="tab" data-tab="sweep" type="button">속도 스윕</button>
+      <button role="tab" data-tab="braking" type="button">브레이킹</button>
+      <button role="tab" data-tab="slip" type="button">슬립스트림</button>
+      <button role="tab" data-tab="compare" type="button">차량 비교</button>
+      <button role="tab" data-tab="model" type="button">모델 설명</button>
+    </div>
+
+    <section class="tabpanel" id="tab-sweep" role="tabpanel">
+      <p class="lede">정속 주행에서 속도별로 다운포스, 항력, 차 자세, 한계 G가 어떻게 바뀌는지 봅니다. 다운포스는 속도 제곱에 비례하지만, 차체가 내려앉으며 지면효과가 바뀌기 때문에 정확한 제곱은 아닙니다.</p>
+      <div class="kpis" id="sweep-kpis"></div>
+      <div class="charts">
+        <figure><figcaption>다운포스 · 항력 <span>kgf</span></figcaption><div class="cw"><canvas id="c-sweep-force"></canvas></div></figure>
+        <figure><figcaption>한계 가속도 <span>최대 감속과 정상 선회 횡G</span></figcaption><div class="cw"><canvas id="c-sweep-g"></canvas></div></figure>
+        <figure><figcaption>라이드하이트 <span>점선은 실속 높이</span></figcaption><div class="cw"><canvas id="c-sweep-ride"></canvas></div></figure>
+        <figure><figcaption>필요 출력 <span>교차점이 최고속도</span></figcaption><div class="cw"><canvas id="c-sweep-power"></canvas></div></figure>
+      </div>
+    </section>
+
+    <section class="tabpanel" id="tab-braking" role="tabpanel" hidden>
+      <p class="lede">매 순간 타이어 한계까지 밟는 풀 브레이킹입니다. 노즈가 숙여지면 앞은 낮아지고 뒤는 들려서 다운포스 크기와 밸런스가 함께 바뀝니다. 속도가 줄면 다운포스가 빠지므로 감속 G도 같이 떨어집니다.</p>
+      <div class="controls">
+        <label for="br-v0">시작 <input id="br-v0" type="number" value="300" step="5"> km/h</label>
+        <label for="br-v1">종료 <input id="br-v1" type="number" value="80" step="5"> km/h</label>
+        <label for="br-bias">바이어스 <input id="br-bias" type="number" step="0.5" placeholder="56"> % F</label>
+        <label for="br-compare"><input id="br-compare" type="checkbox" checked> 강체 에어로와 비교 (점선)</label>
+      </div>
+      <div class="kpis" id="br-kpis"></div>
+      <p class="note" id="br-note"></p>
+      <figure>
+        <figcaption>차량 자세 리플레이 <span>파랑 프론트 DF · 주황 리어 DF · 회색 타이어 하중 · 빨강 항력</span></figcaption>
+        <div class="cw"><canvas id="car-view"></canvas></div>
+        <div class="replay">
+          <button id="br-play" type="button">재생</button>
+          <label for="br-replay" hidden>리플레이 위치</label>
+          <input id="br-replay" type="range" min="0" max="100" value="0">
+          <span id="replay-readout"></span>
+        </div>
+      </figure>
+      <div class="charts">
+        <figure><figcaption>감속 G <span>제동 거리 기준</span></figcaption><div class="cw"><canvas id="c-br-g"></canvas></div></figure>
+        <figure><figcaption>다운포스 <span>kgf</span></figcaption><div class="cw"><canvas id="c-br-df"></canvas></div></figure>
+        <figure><figcaption>축 하중 <span>하중 이동 = m·a·h / L</span></figcaption><div class="cw"><canvas id="c-br-load"></canvas></div></figure>
+        <figure><figcaption>라이드하이트 <span>점선은 실속 높이</span></figcaption><div class="cw"><canvas id="c-br-ride"></canvas></div></figure>
+      </div>
+    </section>
+
+    <section class="tabpanel" id="tab-slip" role="tabpanel" hidden>
+      <p class="lede">앞차 후류 안에서는 항력이 줄어 직선에서 빨라지지만, 다운포스도 잃어 코너에서 불리해집니다. 프론트 윙이 더 많이 잃기 때문에 따라가는 차는 언더스티어가 납니다.</p>
+      <div class="controls">
+        <label for="sl-speed">코너 속도 <input id="sl-speed" type="number" value="200" step="10"> km/h</label>
+      </div>
+      <div class="charts">
+        <figure><figcaption>후류 효과 <span>단독 주행 대비 변화율</span></figcaption><div class="cw"><canvas id="c-sl-wake"></canvas></div></figure>
+        <figure><figcaption>더티 에어 속 코너링 <span>간격별 최대 횡G</span></figcaption><div class="cw"><canvas id="c-sl-lat"></canvas></div></figure>
+      </div>
+      <div class="table-wrap"><table id="sl-table"></table></div>
+      <h3 class="eyebrow">직선 드래그 레이스</h3>
+      <div class="controls">
+        <label for="sl-len">직선 길이 <input id="sl-len" type="number" value="1000" step="50"> m</label>
+        <label for="sl-v0">코너 탈출 <input id="sl-v0" type="number" value="120" step="5"> km/h</label>
+        <label for="sl-gap0">초기 간격 <input id="sl-gap0" type="number" value="15" step="1"> m</label>
+        <label for="sl-drs"><input id="sl-drs" type="checkbox"> 뒤차 DRS</label>
+      </div>
+      <div class="kpis four" id="sl-kpis"></div>
+      <div class="charts">
+        <figure><figcaption>앞차와의 간격 <span>0 아래면 추월</span></figcaption><div class="cw"><canvas id="c-sl-gap"></canvas></div></figure>
+        <figure><figcaption>속도 <span>뒤차 위치 기준</span></figcaption><div class="cw"><canvas id="c-sl-speed"></canvas></div></figure>
+      </div>
+    </section>
+
+    <section class="tabpanel" id="tab-compare" role="tabpanel" hidden>
+      <p class="lede">프리셋 전체를 같은 조건에서 비교합니다. 지금 수정 중인 차량은 수정값이 반영되고 * 표시가 붙습니다.</p>
+      <div class="charts">
+        <figure><figcaption>다운포스 <span>kgf</span></figcaption><div class="cw"><canvas id="c-cmp-df"></canvas></div></figure>
+        <figure><figcaption>항력 <span>kgf</span></figcaption><div class="cw"><canvas id="c-cmp-drag"></canvas></div></figure>
+      </div>
+      <div class="table-wrap"><table id="cmp-table"></table></div>
+    </section>
+
+    <section class="tabpanel model" id="tab-model" role="tabpanel" hidden>
+      <h3>무엇을 계산하나</h3>
+      <p>CFD처럼 공기 흐름을 직접 풀지 않습니다. 심레이싱 물리엔진과 같은 방식으로, 계수와 라이드하이트 기반 에어로맵에 하중 이동과 타이어 모델을 결합한 준정적 모델입니다.</p>
+      <ul>
+        <li>공기 밀도: <code>ρ = p / (R·T)</code>, 건조 공기 가정.</li>
+        <li>항력·다운포스: <code>F = ½ρv²·CdA</code>, <code>DF = ½ρv²·ClA·g(h)</code>. 다운포스를 프론트와 리어로 나누고 각각 해당 축의 라이드하이트로 보정합니다.</li>
+        <li>지면효과 <code>g(h)</code>: 라이드하이트가 낮을수록 선형으로 증가하다가, 실속 높이 아래에서 급감합니다.</li>
+        <li>유도항력: CdA 중 일부는 다운포스에 비례합니다. 그래서 실속하거나 더티 에어로 다운포스를 잃으면 항력도 조금 줄어듭니다.</li>
+        <li>하중 이동: <code>ΔFz = m·a·h_cg / L</code>. 안티다이브/안티리프트 비율만큼은 피치로 이어지지 않습니다.</li>
+        <li>차 자세: 에어로 하중과 하중 이동으로 스프링이 압축되고, 바뀐 라이드하이트가 다시 다운포스를 바꿉니다. 이 순환을 반복 계산으로 풉니다. 평형이 없으면 포포이징 위험으로 표시합니다.</li>
+        <li>타이어: <code>μ = μ0·(Fz/Fref)^(−k)</code>. 하중이 늘수록 마찰계수가 떨어지는 하중 민감도를 반영합니다.</li>
+        <li>브레이킹: 바이어스로 고정된 앞/뒤 제동력 중 어느 한쪽이 먼저 접지 한계에 닿는 감속이 최대 감속입니다.</li>
+        <li>슬립스트림: 간격에 따라 지수적으로 줄어드는 항력 감소와 다운포스 손실. F1 수치는 FIA 발표치(2021 규정: 10m에서 약 47%, 20m에서 약 35% 손실 / 2022 규정: 10m에서 약 18%, 20m에서 약 4% 손실)에 맞췄습니다.</li>
+      </ul>
+      <h3>빠진 것</h3>
+      <ul>
+        <li>타이어 온도·압력·마모, 슬립 비율과 슬립 각에 따른 힘 곡선(Pacejka 같은 모델).</li>
+        <li>댐퍼에 의한 과도 응답. 자세는 매 순간 평형 상태로 계산하므로 실제 포포이징의 진동 자체는 재현하지 않습니다.</li>
+        <li>롤에 따른 에어로 변화, 요(yaw) 각, 횡풍.</li>
+        <li>엔진 브레이크, ABS, 브레이크 온도. 엔진 출력은 회전수와 무관한 일정 출력으로 둡니다.</li>
+        <li>차량별 실제 계수. 팀 데이터는 비공개라 프리셋은 추정치입니다. 절대값보다 변화의 방향과 상대 크기를 보는 용도입니다.</li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<script type="module" src="js/app.js"></script>
