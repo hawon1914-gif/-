@@ -22,11 +22,15 @@ const bundle = await build({
 });
 const worker = await build({ entryPoints: [r('js/lbm-worker.js')], bundle: true, minify: true, write: false, format: 'iife' });
 
-const glb = fs.readFileSync(r('assets/models/CarConcept.glb')).toString('base64');
+const { MODELS } = await import('./js/models.js');
+const assets = {};
+for (const m of MODELS) {
+  if (m.file && fs.existsSync(r(m.file))) assets[m.file] = fs.readFileSync(r(m.file)).toString('base64');
+}
 const safe = (js) => js.replace(/<\/script/gi, '<\\/script');
 const prelude = `
 globalThis.AEROLAB_WORKER_URL = URL.createObjectURL(new Blob([${JSON.stringify(worker.outputFiles[0].text)}], { type: 'text/javascript' }));
-globalThis.AEROLAB_ASSETS = { 'assets/models/CarConcept.glb': ${JSON.stringify(glb)} };
+globalThis.AEROLAB_ASSETS = ${JSON.stringify(assets)};
 `;
 
 let html = fs.readFileSync(r('index.html'), 'utf8');
@@ -38,4 +42,4 @@ html = html.replace(
 );
 fs.mkdirSync(r('dist'), { recursive: true });
 fs.writeFileSync(r('dist/AeroLab.html'), html);
-console.log(`dist/AeroLab.html ${(Buffer.byteLength(html) / 1e6).toFixed(1)} MB`);
+console.log(`dist/AeroLab.html ${(Buffer.byteLength(html) / 1e6).toFixed(1)} MB · 모델 ${Object.keys(assets).length}개`);

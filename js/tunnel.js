@@ -14,6 +14,7 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 // 발산형 색: 파랑(느림·저압·시계방향) - 흰색(자유류) - 빨강(빠름·고압·반시계)
 const DIV = [[0.1, 0.3, 0.85], [0.55, 0.7, 0.95], [0.96, 0.96, 0.96], [0.97, 0.6, 0.45], [0.8, 0.12, 0.12]];
 function ramp(stops, t) {
+  if (!Number.isFinite(t)) t = 0.5;
   t = Math.min(1, Math.max(0, t)) * (stops.length - 1);
   const i = Math.min(stops.length - 2, Math.floor(t));
   const f = t - i;
@@ -213,7 +214,7 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
       const t0 = performance.now();
       const roots = [{ root: main, id: 1 }];
       if (lead) roots.push({ root: lead, id: 2 });
-      const m = rasterize(roots, grid, opts.section);
+      const m = rasterize(roots, grid, opts.section, {}, renderer);
       worker.postMessage({ type: 'mask', solid: m.solid.buffer, wux: m.wux.buffer, wuy: m.wuy.buffer }, [m.solid.buffer, m.wux.buffer, m.wuy.buffer]);
       status.textContent = `격자 ${grid.NX}×${grid.NY}, 칸 크기 ${(grid.dx * 100).toFixed(1)} cm · 변환 ${(performance.now() - t0).toFixed(0)} ms${importInfo}`;
     });
@@ -398,7 +399,7 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
     }
     // 공기가 영역을 두 번 통과할 때까지는 초기 과도 상태라 측정값이 흔들린다
     const settle = Math.min(1, field.steps / ((2 * grid.NX) / U0));
-    rows.push(['계산', `${settle < 1 ? `흐름 발달 중 ${(settle * 100).toFixed(0)}% · ` : '안정 · '}${field.steps.toLocaleString()} 스텝 · 격자 Re ≈ ${Re.toFixed(0)} (실제 ${ReReal.toExponential(1)})`]);
+    rows.push(['계산', `${field.resets ? `발산해서 ${field.resets}회 재시작 · ` : ''}${settle < 1 ? `흐름 발달 중 ${(settle * 100).toFixed(0)}% · ` : '안정 · '}${field.steps.toLocaleString()} 스텝 · 격자 Re ≈ ${Re.toFixed(0)} (실제 ${ReReal.toExponential(1)})`]);
     hud.innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
   }
 

@@ -340,8 +340,9 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
     });
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   };
-  const fx = centerX(/head|windshield|windscreen|front|hood|bonnet/i);
-  const rx = centerX(/tail|rear|back/i);
+  // FL/FR(앞), BL/BR/RL/RR(뒤) 같은 바퀴 약어도 단서로 쓴다
+  const fx = centerX(/head|windshield|windscreen|front|hood|bonnet|(^|[\s_])F[LR]?([\s_]|$)/i);
+  const rx = centerX(/tail|rear|back|(^|[\s_])[BR][LR]([\s_]|$)/i);
   if (fx !== null && rx !== null && fx > rx) flipLong = !flipLong;
   if (flipLong) q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
   if (flipUp) q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI));
@@ -350,8 +351,18 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
 
   const meshes = [];
   object.traverse((o) => { if (o.isMesh) meshes.push(o); });
-  const wheelMeshes = meshes.filter(isWheelMesh);
   const boxOf = (list) => list.reduce((b, o) => b.expandByObject(o), new THREE.Box3());
+  // 이름만 보면 'Front light_Wheels_0'처럼 재질 이름 때문에 라이트가 바퀴로 잡힌다.
+  // 옆에서 봤을 때 둥글고(가로≈세로) 바닥에 닿아 있는 부품만 바퀴로 인정한다.
+  const all = boxOf(meshes);
+  const allH = all.max.y - all.min.y;
+  const wheelMeshes = meshes.filter((o) => {
+    if (!isWheelMesh(o)) return false;
+    const b = new THREE.Box3().setFromObject(o);
+    const w = b.max.x - b.min.x;
+    const h = b.max.y - b.min.y;
+    return Math.abs(w - h) / Math.max(w, h) < 0.3 && b.min.y < all.min.y + 0.25 * allH;
+  });
 
   box = boxOf(meshes);
   const midX = (box.min.x + box.max.x) / 2;
@@ -393,11 +404,69 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
   return { bodyGroup, wheelGroup, wheels: wheelMeshes.length, scale };
 }
 
+// 윙류는 전체 실루엣으로 그리면 엔드플레이트가 윙 아래 공간을 막으므로 중앙 띠만 투영한다
+const WING_RE = /wing|spoiler|flap|endplate|canard/i;
+const WING_SLAB = 0.3; // m, 중앙에서 양쪽으로
+
+// 차체 메시를 옆(z축)에서 정사영해 격자 해상도 그대로 그린다. y' = y + a + b·x 로 라이드하이트 과장 적용.
+// 얇은 부품이 칸보다 작아 사라지지 않도록 면과 와이어프레임을 함께 그린다.
+function silhouette(renderer, root, grid, a, b) {
+  const { NX, NY, x0, dx } = grid;
+  const rt = new THREE.WebGLRenderTarget(NX, NY);
+  const shear = new THREE.Matrix4().set(1, 0, 0, 0, b, 1, 0, a, 0, 0, 1, 0, 0, 0, 0, 1);
+  const fillMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+  const D = 50;
+  const passes = [
+    { cam: new THREE.OrthographicCamera(x0, x0 + NX * dx, NY * dx, 0, 0.01, 2 * D), wing: false },
+    { cam: new THREE.OrthographicCamera(x0, x0 + NX * dx, NY * dx, 0, D - WING_SLAB, D + WING_SLAB), wing: true },
+  ];
+  const isWing = (o) => {
+    for (let n = o; n && n !== root; n = n.parent) if (n.name && WING_RE.test(n.name)) return true;
+    return false;
+  };
+  const prevTarget = renderer.getRenderTarget();
+  const prevAuto = renderer.autoClear;
+  const prevColor = renderer.getClearColor(new THREE.Color());
+  const prevAlpha = renderer.getClearAlpha();
+  renderer.setRenderTarget(rt);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.autoClear = false;
+  root.updateMatrixWorld(true);
+  for (const { cam, wing } of passes) {
+    cam.position.set(0, 0, D);
+    cam.updateMatrixWorld();
+    const scene = new THREE.Scene();
+    scene.matrixWorldAutoUpdate = false;
+    root.traverse((o) => {
+      if (!o.isMesh || o.userData.part === 'wheel' || o.userData.part === 'deco' || isWing(o) !== wing) return;
+      for (const mat of [fillMat, lineMat]) {
+        const p = new THREE.Mesh(o.geometry, mat);
+        p.matrixAutoUpdate = false;
+        p.matrixWorldAutoUpdate = false;
+        p.matrixWorld.multiplyMatrices(shear, o.matrixWorld);
+        scene.add(p);
+      }
+    });
+    renderer.render(scene, cam);
+  }
+  const px = new Uint8Array(NX * NY * 4);
+  renderer.readRenderTargetPixels(rt, 0, 0, NX, NY, px);
+  renderer.setRenderTarget(prevTarget);
+  renderer.autoClear = prevAuto;
+  renderer.setClearColor(prevColor, prevAlpha);
+  rt.dispose(); fillMat.dispose(); lineMat.dispose();
+  const out = new Uint8Array(NX * NY);
+  for (let c = 0; c < NX * NY; c++) out[c] = px[c * 4 + 3] > 0 ? 1 : 0;
+  return out;
+}
+
 // 풍동 격자에 넣을 고체 마스크. 위에서 아래로 광선을 쏴서 메시 내부 구간을 칠한다.
 // mode 'center': z=0 중앙 단면 / 'silhouette': 여러 z 단면의 합집합(측면 실루엣)
 // 라이드하이트는 격자에서 '기본 gap0칸 + mm당 cellsPerMm칸'으로 과장한다.
 // 수 cm 칸으로 실제 15~40mm 틈을 그대로 넣으면 틈이 1~2칸이 되어 점성 윤활막(양력)처럼 동작하기 때문.
-export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm = 0.1 } = {}) {
+export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm = 0.1 } = {}, renderer = null) {
   const { NX, NY, x0, dx, u0 } = grid;
   const solid = new Uint8Array(NX * NY);
   const wux = new Float32Array(NX * NY);
@@ -408,8 +477,10 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
 
   roots.forEach(({ root, id }) => {
     const { car, body } = root.userData;
-    // 불러온 모델은 보통 닫힌 솔리드가 아니라 겉면(껍데기)이라 내부 판정 대신 외곽 포락선을 쓴다
-    const envelope = !!root.userData.imported;
+    // 불러온 모델은 닫힌 솔리드가 아닌 경우가 많아(바닥면이 없는 게임용 모델 등) 내부 판정 대신
+    // GPU로 측면 실루엣을 그려 단면으로 쓴다. 렌더러가 없으면(테스트 환경) 위~아래 포락선으로 대체.
+    const gpu = root.userData.imported && renderer;
+    const fillMode = root.userData.imported && !renderer ? 'envelope' : null;
     root.updateMatrixWorld(true);
     // 앞/뒤 차축 위치의 실제 라이드하이트 → 과장된 격자 틈으로 옮기는 선형 보정 Δ(x)
     const axleF = new THREE.Vector3(0, 0, 0).applyMatrix4(body.matrixWorld);
@@ -417,13 +488,26 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
     const dF = (gap0 + axleF.y * 1000 * cellsPerMm) * dx - axleF.y;
     const dR = (gap0 + axleR.y * 1000 * cellsPerMm) * dx - axleR.y;
     const lift = (x) => dF + ((x - axleF.x) / (axleR.x - axleF.x)) * (dR - dF);
-    const zs = mode === 'center' ? [0] : Array.from({ length: 9 }, (_, k) => (k / 8 - 0.5) * car.width * 0.98);
+    // 대칭 모델은 z=0에 이음선(모서리)이 있어 광선이 빠져나가므로, 중앙 바로 옆 세 단면을 합친다
+    const zs = mode === 'center' ? [-0.02, 0.003, 0.02] : Array.from({ length: 9 }, (_, k) => (k / 8 - 0.5) * car.width * 0.98);
     const meshes = [];
     root.traverse((o) => {
       if (!o.isMesh || o.userData.part === 'deco') return;
       if (o.userData.part === 'wheel' && mode === 'center') return;
+      if (gpu && o.userData.part !== 'wheel') return; // 차체는 아래 GPU 실루엣으로 처리
       meshes.push({ mesh: o, bb: new THREE.Box3().setFromObject(o), wheel: o.userData.part === 'wheel' });
     });
+    if (gpu) {
+      const b = (dR - dF) / (axleR.x - axleF.x);
+      const a = dF - b * axleF.x;
+      const sil = silhouette(renderer, root, grid, a, b);
+      for (let gy = 1; gy < NY - 1; gy++) {
+        for (let gx = 0; gx < NX; gx++) {
+          const c = gy * NX + gx;
+          if (sil[c]) { solid[c] = id; wux[c] = 0; wuy[c] = 0; }
+        }
+      }
+    }
     const fill = (gx, ylo, yhi, shift) => {
       const g0 = Math.max(1, Math.round((ylo + shift) / dx));
       const g1 = Math.min(NY - 2, Math.max(g0, Math.round((yhi + shift) / dx)));
@@ -443,8 +527,13 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
           if (x < bb.min.x || x > bb.max.x || z < bb.min.z || z > bb.max.z) continue;
           ray.set(new THREE.Vector3(x, top, z), down);
           const hits = ray.intersectObject(mesh, false).map((h) => h.point.y);
-          if (envelope && !wheel) {
-            for (const y of hits) { envLo = Math.min(envLo, y); envHi = Math.max(envHi, y); }
+          if (fillMode && !wheel) {
+            if (!hits.length) continue;
+            if (fillMode === 'envelope') {
+              for (const y of hits) { envLo = Math.min(envLo, y); envHi = Math.max(envHi, y); }
+            } else {
+              fill(gx, Math.min(...hits), Math.max(...hits), lift(x));
+            }
             continue;
           }
           if (hits.length < 2) continue;

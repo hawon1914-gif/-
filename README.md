@@ -5,13 +5,13 @@ F1(2021·2022 규정), LMH/LMDh 하이퍼카, Valkyrie급·Chiron급 로드 하�
 
 ## 실행
 
-**`dist/AeroLab.html`을 더블클릭하면 끝입니다.** 서버도, 인터넷도, 설치도 필요 없습니다. 3D 엔진, 유체 해석기, 차량 모델이 전부 이 파일 하나에 들어 있습니다. (크롬·엣지 권장)
+**`AeroLab.html` 하나를 더블클릭하면 끝입니다.** 서버도, 인터넷도, 설치도 필요 없습니다. 3D 엔진, 유체 해석기, 차량 모델이 전부 이 파일 하나에 들어 있습니다. (크롬·엣지 권장)
 
-코드를 고친 뒤 단일 파일을 다시 만들려면:
+이 파일은 저장소에 올리지 않습니다. 출처를 확인하지 않은 개인용 3D 모델(`assets/models/user/`)이 들어가기 때문입니다. 직접 만들려면:
 
 ```bash
 npm install
-npm run build   # dist/AeroLab.html 생성
+npm run build   # dist/AeroLab.html 생성 (assets/models/user/에 있는 모델도 함께 포함)
 npm test        # 물리 모델 테스트
 ```
 
@@ -44,6 +44,6 @@ npm test        # 물리 모델 테스트
 - `js/chart.js`, `js/carview.js`: 차트와 측면도
 - `js/app.js`: UI
 - `build.mjs`: 단일 HTML 빌드 스크립트(esbuild)
-- `dist/AeroLab.html`: 빌드 결과물. 이 파일만 있으면 실행됩니다
+- `js/models.js`: 3D 모델 목록과 각 모델에 맞는 차량 프리셋
 - `vendor/three/`: three.js r160(MIT 라이선스)
-- `assets/models/`: 공개 3D 모델(라이선스는 해당 폴더의 README 참고)
+- `assets/models/`: 공개 3D 모델(라이선스는 해당 폴더의 README 참고). 개인용 모델은 `assets/models/user/`에 두며 저장소에는 올리지 않음

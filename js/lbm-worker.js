@@ -145,10 +145,28 @@ function step() {
   stepCount++;
 }
 
+// 계산이 발산(NaN)하면 자유류로 다시 시작한다. 화면이 멈추지 않게 하는 안전장치.
+let resets = 0;
+function checkDiverged() {
+  for (let c = NX; c < N; c += 97) {
+    if (!solid[c] && !Number.isFinite(rho[c])) {
+      for (let k = 0; k < N; k++) {
+        for (let i = 0; i < 9; i++) f[i * N + k] = equilibrium(i, 1, u0, 0);
+        ux[k] = u0; uy[k] = 0; rho[k] = 1;
+      }
+      force.fill(0);
+      stepCount = 0;
+      resets++;
+      return;
+    }
+  }
+}
+
 function loop() {
   if (!running) return;
   const t0 = performance.now();
   while (performance.now() - t0 < 30) step();
+  checkDiverged();
   setTimeout(loop, 0);
 }
 
@@ -162,7 +180,7 @@ self.onmessage = (e) => {
     self.postMessage({
       type: 'frame',
       ux: ux.slice(), uy: uy.slice(), rho: rho.slice(), solid: solid.slice(),
-      force: Array.from(force), steps: stepCount,
+      force: Array.from(force), steps: stepCount, resets,
     });
   }
 };

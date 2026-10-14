@@ -2,6 +2,7 @@ import * as P from './physics.js';
 import { CARS, PARAM_GROUPS, cloneCar, getParam, setParam } from './cars.js';
 import { LineChart } from './chart.js';
 import { drawCarView } from './carview.js';
+import { MODELS } from './models.js';
 
 const $ = (id) => document.getElementById(id);
 const kgf = (n) => n / P.G;
@@ -471,11 +472,26 @@ function bindTunnel() {
   const loadFailed = (err) => {
     $('tn-status').textContent = `모델을 읽지 못했습니다: ${err.message || err}. .glb(바이너리 glTF) 파일인지 확인하세요.`;
   };
-  $('tn-model').addEventListener('change', (e) => {
+  // 단일 파일 빌드에서는 실제로 들어 있는 모델만 보여준다
+  const embedded = globalThis.AEROLAB_ASSETS;
+  const sel = $('tn-model');
+  sel.innerHTML = MODELS.filter((m) => !m.file || !embedded || embedded[m.file])
+    .map((m) => `<option value="${m.id}">${m.name}</option>`).join('') + '<option value="file" disabled>내 파일</option>';
+  sel.addEventListener('change', (e) => {
     if (!tunnel) return;
-    $('tn-credit').hidden = e.target.value !== 'carconcept';
-    if (e.target.value === 'procedural') tunnel.clearModel();
-    else if (e.target.value === 'carconcept') tunnel.loadModel('assets/models/CarConcept.glb').catch(loadFailed);
+    const m = MODELS.find((x) => x.id === e.target.value);
+    if (!m) return;
+    $('tn-credit').hidden = m.credit !== 'carconcept';
+    if (!m.file) {
+      tunnel.clearModel();
+      return;
+    }
+    // 모델에 맞는 차량 프리셋으로 바꾼다
+    if (m.preset && m.preset !== state.carId) {
+      $('car-select').value = m.preset;
+      $('car-select').dispatchEvent(new Event('change'));
+    }
+    tunnel.loadModel(m.file).catch(loadFailed);
   });
   $('tn-file').addEventListener('change', (e) => {
     const file = e.target.files?.[0];
