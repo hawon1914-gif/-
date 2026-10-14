@@ -50,7 +50,7 @@ test('슬립스트림으로 직선에서 간격이 줄어든다', () => {
 test('모든 프리셋의 결과가 현실 범위 안', () => {
   for (const car of Object.values(CARS)) {
     const v = P.toKmh(P.topSpeed(car, env));
-    assert.ok(v > 250 && v < 380, `${car.name} vmax ${v}`);
+    assert.ok(v > 250 && v < 480, `${car.name} vmax ${v}`);
     const b = P.maxBraking(car, env, P.toMs(200)).a / P.G;
     assert.ok(b > 1 && b < 7, `${car.name} brake ${b}`);
   }

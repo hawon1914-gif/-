@@ -21,7 +21,8 @@
   --body: #c9d3dd;
   --ok: #2c8a57;
   --warn: #c0661a;
-  --c1: #1f6fd1; --c2: #7a52c7; --c3: #2c8a57; --c4: #e2581d; --c5: #6b7785;
+  --c1: #1f6fd1; --c2: #7a52c7; --c3: #2c8a57; --c4: #e2581d; --c5: #6b7785; --c6: #b8336a; --c7: #0e7c86;
+  --asphalt: #4a5058; --asphalt-line: #c9ced4; --solid: #2a2f36;
   --font-display: "Barlow Condensed", "IBM Plex Sans KR", system-ui, sans-serif;
   --font-body: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --font-data: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -31,7 +32,8 @@
     --bg: #11161c; --panel: #182029; --line: #2b3642; --grid: #232d38; --ink: #e4eaf0; --ink-2: #8b98a6;
     --accent: #ff7a3d; --front: #5aa2ff; --rear: #f0b23a; --drag: #ff6470; --tire: #556270; --body: #2c3946;
     --ok: #4cc283; --warn: #f09a4a;
-    --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2;
+    --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2; --c6: #f06aa0; --c7: #3cc4cf;
+    --asphalt: #2a2e34; --asphalt-line: #6b737c; --solid: #0b0e12;
     color-scheme: dark;
   }
 }
@@ -39,7 +41,8 @@
   --bg: #11161c; --panel: #182029; --line: #2b3642; --grid: #232d38; --ink: #e4eaf0; --ink-2: #8b98a6;
   --accent: #ff7a3d; --front: #5aa2ff; --rear: #f0b23a; --drag: #ff6470; --tire: #556270; --body: #2c3946;
   --ok: #4cc283; --warn: #f09a4a;
-  --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2;
+  --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2; --c6: #f06aa0; --c7: #3cc4cf;
+  --asphalt: #2a2e34; --asphalt-line: #6b737c; --solid: #0b0e12;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -142,6 +145,32 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
 .model p, .model li { margin: 0; }
 .model ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 .model code { font: 12.5px var(--font-data); background: var(--panel); border: 1px solid var(--line); padding: 1px 5px; border-radius: 3px; }
+/* 풍동 */
+.viewport { position: relative; height: clamp(320px, 58vh, 640px); background: linear-gradient(var(--sky-top, var(--panel)), var(--bg)); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; touch-action: none; }
+.viewport canvas { display: block; }
+.vp-legend { position: absolute; left: 10px; bottom: 8px; font: 11px var(--font-data); color: var(--ink-2); background: color-mix(in srgb, var(--panel) 80%, transparent); padding: 3px 7px; border-radius: 3px; pointer-events: none; }
+.hud { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin: 0; }
+.hud div { background: var(--panel); padding: 8px 12px; min-width: 0; }
+.hud div:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.hud dt { font: 600 11px var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.hud dd { margin: 2px 0 0; font: 12.5px var(--font-data); overflow-wrap: anywhere; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { padding: 4px 10px; cursor: pointer; color: var(--ink-2); background: var(--panel); font-size: 13px; }
+.seg input:checked + label { background: var(--ink); color: var(--bg); }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ctl-group { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+.ctl-group .ctl { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.ctl input[type=range] { width: 160px; accent-color: var(--accent); }
+.ctl output { font: 500 13px var(--font-data); color: var(--ink); min-width: 68px; }
+.file-btn { position: relative; overflow: hidden; display: inline-flex; align-items: center; font: 600 13px var(--font-body); border: 1px solid var(--line); border-radius: 3px; padding: 5px 12px; background: var(--panel); cursor: pointer; color: var(--ink); }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.colorbar { height: 8px; border-radius: 2px; background: linear-gradient(90deg, #121a4d, #1a59d9, #26ccd9, #fad933, #d9261a); }
+.colorbar.div { background: linear-gradient(90deg, #1a4dd9, #8cb3f2, #f5f5f5, #f79973, #cc1f1f); }
+.cb-row { display: flex; align-items: center; gap: 8px; font: 11px var(--font-data); color: var(--ink-2); }
+.cb-row .colorbar { flex: 1; }
+#tn-field { width: 100%; display: block; border-radius: 2px; }
+.tn-status { font: 11px var(--font-data); color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 
@@ -178,6 +207,7 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
       <h2 id="car-name">F1</h2>
     </div>
     <div role="tablist" aria-label="실험">
+      <button role="tab" data-tab="tunnel" type="button">3D 풍동</button>
       <button role="tab" data-tab="sweep" type="button">속도 스윕</button>
       <button role="tab" data-tab="braking" type="button">브레이킹</button>
       <button role="tab" data-tab="slip" type="button">슬립스트림</button>
@@ -185,7 +215,52 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
       <button role="tab" data-tab="model" type="button">모델 설명</button>
     </div>
 
-    <section class="tabpanel" id="tab-sweep" role="tabpanel">
+
+    <section class="tabpanel" id="tab-tunnel" role="tabpanel" hidden>
+      <div class="viewport" id="tn-view">
+        <span class="vp-legend">드래그: 회전 · 휠/핀치: 확대 · 우클릭: 이동 — 화살표: 파랑 프론트 DF, 주황 리어 DF, 빨강 항력</span>
+      </div>
+      <div class="ctl-group">
+        <span class="ctl"><label for="tn-speed">속도</label><input id="tn-speed" type="range" min="60" max="350" step="5" value="250"><output id="tn-speed-out" for="tn-speed">250 km/h</output></span>
+        <span class="seg" role="radiogroup" aria-label="차 자세">
+          <input type="radio" name="tn-att" id="tn-att-static" value="static"><label for="tn-att-static">정지</label>
+          <input type="radio" name="tn-att" id="tn-att-cruise" value="cruise" checked><label for="tn-att-cruise">정속</label>
+          <input type="radio" name="tn-att" id="tn-att-brake" value="brake"><label for="tn-att-brake">풀 브레이킹</label>
+        </span>
+        <span class="seg" role="radiogroup" aria-label="표시 값">
+          <input type="radio" name="tn-view" id="tn-view-speed" value="speed" checked><label for="tn-view-speed">풍속</label>
+          <input type="radio" name="tn-view" id="tn-view-vort" value="vort"><label for="tn-view-vort">와류</label>
+          <input type="radio" name="tn-view" id="tn-view-press" value="press"><label for="tn-view-press">압력</label>
+        </span>
+      </div>
+      <div class="ctl-group">
+        <span class="ctl"><input id="tn-leader" type="checkbox"><label for="tn-leader">앞차 추가 (슬립스트림)</label></span>
+        <span class="ctl"><label for="tn-gap">간격</label><input id="tn-gap" type="number" min="1" max="30" step="1" value="8"> m</span>
+        <span class="seg" role="radiogroup" aria-label="단면">
+          <input type="radio" name="tn-sec" id="tn-sec-center" value="center" checked><label for="tn-sec-center">중앙 단면</label>
+          <input type="radio" name="tn-sec" id="tn-sec-sil" value="silhouette"><label for="tn-sec-sil">측면 실루엣</label>
+        </span>
+        <span class="ctl"><label for="tn-quality">격자</label><select id="tn-quality"><option value="std">표준 400</option><option value="hi">고해상도 560</option></select></span>
+      </div>
+      <div class="ctl-group">
+        <span class="ctl"><input id="tn-plane" type="checkbox" checked><label for="tn-plane">단면 유동장</label></span>
+        <span class="ctl"><input id="tn-streaks" type="checkbox" checked><label for="tn-streaks">유선</label></span>
+        <span class="ctl"><input id="tn-ghost" type="checkbox"><label for="tn-ghost">차체 반투명</label></span>
+        <button id="tn-reset" type="button">유동 초기화</button>
+        <label class="file-btn" for="tn-file">내 3D 모델 (.glb)<input id="tn-file" type="file" accept=".glb,.gltf,model/gltf-binary"></label>
+        <button id="tn-rotate" type="button">모델 90° 회전</button>
+        <button id="tn-default" type="button">기본 모델</button>
+      </div>
+      <dl class="hud" id="tn-hud"><div><dt>준비 중</dt><dd>3D 엔진과 유체 해석기를 불러오는 중입니다.</dd></div></dl>
+      <figure>
+        <figcaption>2D 풍동 단면 <span>격자 볼츠만(LBM) 실시간 해석 · 차 기준 좌표계, 노면과 바퀴가 함께 움직임</span></figcaption>
+        <canvas id="tn-field"></canvas>
+        <div class="cb-row"><span id="cb-lo">정지</span><div class="colorbar div" id="cb"></div><span id="cb-hi">1.5× 자유류</span><span class="tn-status" id="tn-status"></span></div>
+      </figure>
+      <p class="note">공기 흐름은 차의 2D 단면에서 실제 유체 방정식(격자 볼츠만법)으로 계산합니다. 3D 유선은 그 단면 결과를 차폭 방향으로 펼쳐 보여주는 것이라 차 옆을 돌아 나가는 흐름은 없습니다. 격자 레이놀즈수가 실제보다 수천 배 작고 칸 크기가 수 cm라서, 박리·후류·지면효과의 경향은 보이지만 측정 계수를 실제 값으로 읽으면 안 됩니다. 라이드하이트는 격자에서 4칸 + 10mm당 1칸으로 과장합니다. 수 cm 칸에 실제 틈을 그대로 넣으면 틈이 1~2칸이 되어, 낮은 레이놀즈수에서 바닥이 오히려 양력을 받는 윤활막처럼 동작하기 때문입니다. 흰색은 자유류와 같은 속도, 파랑은 느린 공기, 빨강은 빠른 공기입니다.</p>
+      <p class="note">앞차를 넣으면 뒤차의 항력 감소(슬립스트림)는 실제와 같은 방향으로 나옵니다. 하지만 2D에서는 후류 소용돌이가 옆으로 빠지지 못해 실제보다 훨씬 강하고, 다운포스는 오히려 늘어나게 나올 수 있습니다. 더티 에어로 인한 다운포스 손실은 FIA 수치에 맞춘 준정적 모델(슬립스트림 탭) 쪽을 믿으세요.</p>
+    </section>
+    <section class="tabpanel" id="tab-sweep" role="tabpanel" hidden>
       <p class="lede">정속 주행에서 속도별로 다운포스, 항력, 차 자세, 한계 G가 어떻게 바뀌는지 봅니다. 다운포스는 속도 제곱에 비례하지만, 차체가 내려앉으며 지면효과가 바뀌기 때문에 정확한 제곱은 아닙니다.</p>
       <div class="kpis" id="sweep-kpis"></div>
       <div class="charts">
@@ -271,6 +346,13 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
         <li>브레이킹: 바이어스로 고정된 앞/뒤 제동력 중 어느 한쪽이 먼저 접지 한계에 닿는 감속이 최대 감속입니다.</li>
         <li>슬립스트림: 간격에 따라 지수적으로 줄어드는 항력 감소와 다운포스 손실. F1 수치는 FIA 발표치(2021 규정: 10m에서 약 47%, 20m에서 약 35% 손실 / 2022 규정: 10m에서 약 18%, 20m에서 약 4% 손실)에 맞췄습니다.</li>
       </ul>
+      <h3>3D 풍동</h3>
+      <ul>
+        <li>3D 모델은 차종별 치수(길이, 휠베이스, 트레드, 폭, 높이)로 코드에서 만든 형상입니다. 실제 팀 CAD는 공개되지 않습니다. 직접 구한 .glb 파일을 불러올 수 있습니다.</li>
+        <li>유동은 격자 볼츠만법(D2Q9, 스마고린스키 난류 모델)으로 차의 중앙 단면 또는 측면 실루엣을 2D로 풉니다. 노면은 공기와 같은 속도로 움직이고, 바퀴는 회전하는 벽으로 다룹니다.</li>
+        <li>차 자세(라이드하이트, 피치)는 준정적 모델에서 가져옵니다. 풀 브레이킹을 고르면 노즈가 숙여진 상태로 유동을 다시 계산합니다.</li>
+        <li>힘은 운동량 교환법으로 적분한 2D 계수입니다. 레이놀즈수가 실제보다 수천 배 작아 절대값은 의미가 없고, 같은 차의 자세 변화나 앞차 유무에 따른 상대 변화를 보는 용도입니다.</li>
+      </ul>
       <h3>빠진 것</h3>
       <ul>
         <li>타이어 온도·압력·마모, 슬립 비율과 슬립 각에 따른 힘 곡선(Pacejka 같은 모델).</li>
@@ -283,4 +365,5 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
   </main>
 </div>
 
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script type="module" src="js/app.js"></script>

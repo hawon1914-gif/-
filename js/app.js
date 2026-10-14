@@ -11,7 +11,7 @@ const state = {
   car: cloneCar('f1_2022'),
   env: { tempC: 20, pressureHpa: 1013.25, rho: P.airDensity(20, 1013.25) },
   platform: true,
-  tab: 'sweep',
+  tab: 'tunnel',
   braking: null,
   replayIdx: 0,
   playing: false,
@@ -34,11 +34,13 @@ function buildCarSelect() {
     state.carId = sel.value;
     state.car = cloneCar(sel.value);
     buildParams();
+    tunnel?.carChanged();
     update();
   });
   $('reset-car').addEventListener('click', () => {
     state.car = cloneCar(state.carId);
     buildParams();
+    tunnel?.carChanged();
     update();
   });
 }
@@ -117,7 +119,7 @@ function bindTabs() {
   for (const t of tabs) t.addEventListener('click', () => select(t.dataset.tab));
   const fromHash = location.hash.slice(1);
   const saved = storageGet('aerolab-tab');
-  select(tabs.some((t) => t.dataset.tab === fromHash) ? fromHash : tabs.some((t) => t.dataset.tab === saved) ? saved : 'sweep');
+  select(tabs.some((t) => t.dataset.tab === fromHash) ? fromHash : tabs.some((t) => t.dataset.tab === saved) ? saved : 'tunnel');
 }
 
 // ---------- 공통 출력 ----------
@@ -366,7 +368,7 @@ function bindSlip() {
 function runCompare() {
   const { env, platform } = state;
   const cars = Object.entries(CARS).map(([id, preset]) => ({ id, car: id === state.carId ? state.car : preset }));
-  const colors = ['--c1', '--c2', '--c3', '--c4', '--c5'];
+  const colors = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6', '--c7'];
   const dfSeries = [];
   const dragSeries = [];
   const rows = cars.map(({ id, car }, i) => {
@@ -397,17 +399,101 @@ function runCompare() {
     .join('')}</tbody>`;
 }
 
+// ---------- 3D 풍동 ----------
+
+let tunnel = null;
+let tunnelLoading = false;
+function ensureTunnel() {
+  if (tunnel || tunnelLoading) return;
+  tunnelLoading = true;
+  import('./tunnel.js')
+    .then(({ createTunnel }) => {
+      tunnel = createTunnel({
+        viewport: $('tn-view'),
+        fieldCanvas: $('tn-field'),
+        hud: $('tn-hud'),
+        status: $('tn-status'),
+        getCar: () => state.car,
+        getEnv: () => state.env,
+      });
+      Object.assign(tunnel.opts, tunnelOptsFromDom());
+      tunnel.start();
+      tunnel.setVisible(state.tab === 'tunnel');
+    })
+    .catch((err) => {
+      $('tn-hud').innerHTML = `<div><dt>3D 엔진을 불러오지 못했습니다</dt><dd>three.js를 cdn.jsdelivr.net에서 받아야 합니다. 네트워크를 확인한 뒤 새로고침하세요. (${String(err.message || err)})</dd></div>`;
+    })
+    .finally(() => { tunnelLoading = false; });
+}
+
+// 엔진을 불러오는 동안 바꾼 컨트롤 값도 반영되도록 DOM에서 읽는다
+function tunnelOptsFromDom() {
+  const radio = (name) => document.querySelector(`input[name=${name}]:checked`).value;
+  return {
+    speedKmh: +$('tn-speed').value,
+    attitude: radio('tn-att'),
+    section: radio('tn-sec'),
+    view: radio('tn-view'),
+    leader: $('tn-leader').checked,
+    gap: Math.min(30, Math.max(1, +$('tn-gap').value || 8)),
+    quality: $('tn-quality').value,
+    plane: $('tn-plane').checked,
+    streaks: $('tn-streaks').checked,
+    ghost: $('tn-ghost').checked,
+  };
+}
+
+function bindTunnel() {
+  const set = (patch) => tunnel?.set(patch);
+  $('tn-speed').addEventListener('input', (e) => {
+    $('tn-speed-out').textContent = `${e.target.value} km/h`;
+    set({ speedKmh: +e.target.value });
+  });
+  for (const r of document.querySelectorAll('input[name=tn-att]')) r.addEventListener('change', (e) => set({ attitude: e.target.value }));
+  for (const r of document.querySelectorAll('input[name=tn-sec]')) r.addEventListener('change', (e) => set({ section: e.target.value }));
+  const labels = { speed: ['정지', '1.5× 자유류'], vort: ['시계 방향 와류', '반시계'], press: ['Cp −1 (흡입)', 'Cp +1'] };
+  for (const r of document.querySelectorAll('input[name=tn-view]')) {
+    r.addEventListener('change', (e) => {
+      const v = e.target.value;
+      [$('cb-lo').textContent, $('cb-hi').textContent] = labels[v];
+      set({ view: v });
+    });
+  }
+  $('tn-leader').addEventListener('change', (e) => set({ leader: e.target.checked }));
+  $('tn-gap').addEventListener('change', (e) => set({ gap: Math.min(30, Math.max(1, +e.target.value || 8)) }));
+  $('tn-quality').addEventListener('change', (e) => set({ quality: e.target.value }));
+  $('tn-plane').addEventListener('change', (e) => set({ plane: e.target.checked }));
+  $('tn-streaks').addEventListener('change', (e) => set({ streaks: e.target.checked }));
+  $('tn-ghost').addEventListener('change', (e) => set({ ghost: e.target.checked }));
+  $('tn-reset').addEventListener('click', () => tunnel?.resetFlow());
+  $('tn-rotate').addEventListener('click', () => tunnel?.rotateModel());
+  $('tn-default').addEventListener('click', () => tunnel?.clearModel());
+  $('tn-file').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !tunnel) return;
+    tunnel.loadModel(file).catch((err) => {
+      $('tn-status').textContent = `모델을 읽지 못했습니다: ${err.message || err}. .glb(바이너리 glTF) 파일인지 확인하세요.`;
+    });
+    e.target.value = '';
+  });
+}
+
 // ---------- 갱신 ----------
 
 let timer = null;
 function scheduleUpdate() {
   clearTimeout(timer);
-  timer = setTimeout(update, 120);
+  timer = setTimeout(() => {
+    tunnel?.paramsChanged();
+    update();
+  }, 120);
 }
 
 function update() {
   $('car-name').textContent = state.car.name;
-  if (state.tab === 'sweep') runSweep();
+  tunnel?.setVisible(state.tab === 'tunnel');
+  if (state.tab === 'tunnel') ensureTunnel();
+  else if (state.tab === 'sweep') runSweep();
   else if (state.tab === 'braking') runBraking();
   else if (state.tab === 'slip') runSlip();
   else if (state.tab === 'compare') runCompare();
@@ -418,10 +504,12 @@ buildParams();
 bindEnv();
 bindBraking();
 bindSlip();
+bindTunnel();
 bindTabs();
 const redraw = () => {
   Object.values(charts).forEach((c) => c.draw());
   drawReplay();
+  tunnel?.themeChanged();
 };
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
 new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
