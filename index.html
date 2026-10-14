@@ -369,5 +369,6 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
   </main>
 </div>
 
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<!-- three.js r160을 저장소에 포함해 인터넷 없이 동작한다 (vendor/three, MIT 라이선스) -->
+<script type="importmap">{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/"}}</script>
 <script type="module" src="js/app.js"></script>

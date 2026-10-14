@@ -421,7 +421,7 @@ function ensureTunnel() {
       tunnel.setVisible(state.tab === 'tunnel');
     })
     .catch((err) => {
-      $('tn-hud').innerHTML = `<div><dt>3D 엔진을 불러오지 못했습니다</dt><dd>three.js를 cdn.jsdelivr.net에서 받아야 합니다. 네트워크를 확인한 뒤 새로고침하세요. (${String(err.message || err)})</dd></div>`;
+      $('tn-hud').innerHTML = `<div><dt>3D 엔진을 불러오지 못했습니다</dt><dd>vendor/three 폴더가 있는지, 그리고 파일을 직접 연 게 아니라 로컬 서버(start 스크립트)로 열었는지 확인하세요. (${String(err.message || err)})</dd></div>`;
     })
     .finally(() => { tunnelLoading = false; });
 }
