@@ -113,7 +113,8 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
 
   function makeWorker() {
     if (worker) worker.terminate();
-    worker = new Worker(new URL('./lbm-worker.js', import.meta.url));
+    // 단일 파일 빌드에서는 워커 코드를 Blob URL로 미리 넣어 둔다 (file://에서도 동작)
+    worker = new Worker(globalThis.AEROLAB_WORKER_URL ?? new URL('./lbm-worker.js', import.meta.url));
     worker.onmessage = (e) => {
       if (e.data.type !== 'frame') return;
       field = e.data;
@@ -252,6 +253,9 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
   }
 
   async function fetchModel(url) {
+    // 단일 파일 빌드에는 모델이 base64로 들어 있다
+    const embedded = globalThis.AEROLAB_ASSETS?.[url];
+    if (embedded) return Uint8Array.from(atob(embedded), (c) => c.charCodeAt(0)).buffer;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`${url}을(를) 읽을 수 없습니다 (${res.status})`);
     return res.arrayBuffer();
