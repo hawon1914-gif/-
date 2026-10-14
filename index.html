@@ -24,7 +24,7 @@
   --ok: #2c8a57;
   --warn: #c0661a;
   --c1: #1f6fd1; --c2: #7a52c7; --c3: #2c8a57; --c4: #e2581d; --c5: #6b7785; --c6: #b8336a; --c7: #0e7c86;
-  --asphalt: #4a5058; --asphalt-line: #c9ced4; --solid: #2a2f36;
+  --asphalt: #4a5058; --asphalt-line: #c9ced4; --solid: #2a2f36; --scene-bg: #dfe5eb;
   --font-display: "Barlow Condensed", "IBM Plex Sans KR", system-ui, sans-serif;
   --font-body: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --font-data: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -35,7 +35,7 @@
     --accent: #ff7a3d; --front: #5aa2ff; --rear: #f0b23a; --drag: #ff6470; --tire: #556270; --body: #2c3946;
     --ok: #4cc283; --warn: #f09a4a;
     --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2; --c6: #f06aa0; --c7: #3cc4cf;
-    --asphalt: #2a2e34; --asphalt-line: #6b737c; --solid: #0b0e12;
+    --asphalt: #2a2e34; --asphalt-line: #6b737c; --solid: #0b0e12; --scene-bg: #141a21;
     color-scheme: dark;
   }
 }
@@ -44,7 +44,7 @@
   --accent: #ff7a3d; --front: #5aa2ff; --rear: #f0b23a; --drag: #ff6470; --tire: #556270; --body: #2c3946;
   --ok: #4cc283; --warn: #f09a4a;
   --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2; --c6: #f06aa0; --c7: #3cc4cf;
-  --asphalt: #2a2e34; --asphalt-line: #6b737c; --solid: #0b0e12;
+  --asphalt: #2a2e34; --asphalt-line: #6b737c; --solid: #0b0e12; --scene-bg: #141a21;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -244,7 +244,8 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
           <input type="radio" name="tn-sec" id="tn-sec-center" value="center" checked><label for="tn-sec-center">중앙 단면</label>
           <input type="radio" name="tn-sec" id="tn-sec-sil" value="silhouette"><label for="tn-sec-sil">측면 실루엣</label>
         </span>
-        <span class="ctl"><label for="tn-quality">격자</label><select id="tn-quality"><option value="std">표준 400</option><option value="hi">고해상도 560</option></select></span>
+        <span class="ctl"><label for="tn-quality">격자</label><select id="tn-quality"><option value="std">표준</option><option value="hi">고해상도</option></select></span>
+        <span class="ctl"><label for="tn-graphics">그래픽</label><select id="tn-graphics"><option value="auto">자동</option><option value="high">높음</option><option value="medium">보통</option><option value="low">낮음</option></select></span>
       </div>
       <div class="ctl-group">
         <span class="ctl"><input id="tn-plane" type="checkbox" checked><label for="tn-plane">단면 유동장</label></span>
@@ -261,7 +262,7 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
       <p class="note" id="tn-credit" hidden>3D 모델: <a href="https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept" target="_blank" rel="noopener">Car Concept</a> — Eric Chadwick, © 2024 Darmstadt Graphics Group GmbH, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>. 원본은 Unity Fan의 퍼블릭 도메인(CC0) 모델이며, 이 실험실에서는 크기·방향을 맞추고 바퀴를 분리해 사용합니다. 크기는 선택한 차의 휠베이스에 맞춰 늘리거나 줄입니다.</p>
       <dl class="hud" id="tn-hud"><div><dt>준비 중</dt><dd>3D 엔진과 유체 해석기를 불러오는 중입니다.</dd></div></dl>
       <figure>
-        <figcaption>2D 풍동 단면 <span>격자 볼츠만(LBM) 실시간 해석 · 차 기준 좌표계, 노면과 바퀴가 함께 움직임</span></figcaption>
+        <figcaption>2D 풍동 단면 <span>격자 볼츠만(LBM) 실시간 해석 · 차 기준 좌표계, 노면이 공기와 함께 움직임</span></figcaption>
         <canvas id="tn-field"></canvas>
         <div class="cb-row"><span id="cb-lo">정지</span><div class="colorbar div" id="cb"></div><span id="cb-hi">1.5× 자유류</span><span class="tn-status" id="tn-status"></span></div>
       </figure>
@@ -357,7 +358,7 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
       <h3>3D 풍동</h3>
       <ul>
         <li>3D 모델은 차종별 치수(길이, 휠베이스, 트레드, 폭, 높이)로 코드에서 만든 형상입니다. 실제 팀 CAD는 공개되지 않습니다. 직접 구한 .glb 파일을 불러올 수 있습니다.</li>
-        <li>유동은 격자 볼츠만법(D2Q9, 스마고린스키 난류 모델)으로 차의 중앙 단면 또는 측면 실루엣을 2D로 풉니다. 노면은 공기와 같은 속도로 움직이고, 바퀴는 회전하는 벽으로 다룹니다.</li>
+        <li>유동은 격자 볼츠만법(D2Q9, 스마고린스키 난류 모델)으로 차의 중앙 단면 또는 측면 실루엣을 2D로 풉니다. 그래픽카드(WebGL2)로 계산하고, 안 되는 환경에서는 CPU로 자동 전환합니다. 프레임이 떨어지면 한 프레임당 계산 스텝 수를 자동으로 줄입니다. 노면은 공기와 같은 속도로 움직입니다. 바퀴는 고정된 벽으로 다룹니다. 회전하는 바퀴는 2D 단면에서 차 아래로 공기를 계속 밀어 넣어 계산이 발산하기 때문입니다.</li>
         <li>차 자세(라이드하이트, 피치)는 준정적 모델에서 가져옵니다. 풀 브레이킹을 고르면 노즈가 숙여진 상태로 유동을 다시 계산합니다.</li>
         <li>힘은 운동량 교환법으로 적분한 2D 계수입니다. 레이놀즈수가 실제보다 수천 배 작아 절대값은 의미가 없고, 같은 차의 자세 변화나 앞차 유무에 따른 상대 변화를 보는 용도입니다.</li>
       </ul>
@@ -374,7 +375,7 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
 </div>
 
 <!-- three.js r160을 저장소에 포함해 인터넷 없이 동작한다 (vendor/three, MIT 라이선스) -->
-<script type="importmap">{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/"}}</script>
+<script type="importmap">{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/","three/examples/jsm/":"./vendor/three/examples/jsm/","postprocessing":"./vendor/postprocessing/index.js","n8ao":"./vendor/n8ao/N8AO.js"}}</script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

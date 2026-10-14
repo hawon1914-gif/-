@@ -16,6 +16,9 @@ const bundle = await build({
   alias: {
     three: r('vendor/three/build/three.module.js'),
     'three/addons': r('vendor/three/examples/jsm'),
+    'three/examples/jsm': r('vendor/three/examples/jsm'),
+    postprocessing: r('vendor/postprocessing/index.js'),
+    n8ao: r('vendor/n8ao/N8AO.js'),
   },
   logLevel: 'warning',
   logOverride: { 'empty-import-meta': 'silent' },

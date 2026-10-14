@@ -39,11 +39,14 @@ npm test        # 물리 모델 테스트
 - `js/physics.js`: 물리 모델(순수 함수)
 - `js/cars.js`: 차량 프리셋과 파라미터 스키마
 - `js/model3d.js`: 절차적 3D 모델, glTF 정렬, 형상을 격자로 변환
-- `js/lbm-worker.js`: 격자 볼츠만 유체 해석기(Web Worker)
+- `js/lbm-gpu.js`: 격자 볼츠만 유체 해석기(GPU, WebGL2 셰이더)
+- `js/lbm-worker.js`: 같은 해석기의 CPU 버전(Web Worker). GPU를 못 쓸 때 사용
+- `js/solver.js`: GPU/CPU 해석기 자동 선택
 - `js/tunnel.js`: three.js 장면, 유선, 측정값
 - `js/chart.js`, `js/carview.js`: 차트와 측면도
 - `js/app.js`: UI
 - `build.mjs`: 단일 HTML 빌드 스크립트(esbuild)
 - `js/models.js`: 3D 모델 목록과 각 모델에 맞는 차량 프리셋
 - `vendor/three/`: three.js r160(MIT 라이선스)
+- `vendor/postprocessing/`, `vendor/n8ao/`: 후처리(안티에일리어싱, 앰비언트 오클루전, 블룸). 각각 Zlib, ISC 라이선스
 - `assets/models/`: 공개 3D 모델(라이선스는 해당 폴더의 README 참고). 개인용 모델은 `assets/models/user/`에 두며 저장소에는 올리지 않음

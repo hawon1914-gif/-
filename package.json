@@ -22,5 +22,9 @@
     "esbuild": "^0.24.0"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "n8ao": "^1.9.4",
+    "postprocessing": "^6.35.6"
+  }
 }

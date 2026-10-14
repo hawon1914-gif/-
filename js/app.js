@@ -438,6 +438,7 @@ function tunnelOptsFromDom() {
     leader: $('tn-leader').checked,
     gap: Math.min(30, Math.max(1, +$('tn-gap').value || 8)),
     quality: $('tn-quality').value,
+    graphics: $('tn-graphics').value,
     plane: $('tn-plane').checked,
     streaks: $('tn-streaks').checked,
     ghost: $('tn-ghost').checked,
@@ -463,6 +464,7 @@ function bindTunnel() {
   $('tn-leader').addEventListener('change', (e) => set({ leader: e.target.checked }));
   $('tn-gap').addEventListener('change', (e) => set({ gap: Math.min(30, Math.max(1, +e.target.value || 8)) }));
   $('tn-quality').addEventListener('change', (e) => set({ quality: e.target.value }));
+  $('tn-graphics').addEventListener('change', (e) => set({ graphics: e.target.value }));
   $('tn-plane').addEventListener('change', (e) => set({ plane: e.target.checked }));
   $('tn-streaks').addEventListener('change', (e) => set({ streaks: e.target.checked }));
   $('tn-ghost').addEventListener('change', (e) => set({ ghost: e.target.checked }));

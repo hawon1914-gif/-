@@ -485,7 +485,7 @@ function silhouette(renderer, root, grid, a, b) {
 // 라이드하이트는 격자에서 '기본 gap0칸 + mm당 cellsPerMm칸'으로 과장한다.
 // 수 cm 칸으로 실제 15~40mm 틈을 그대로 넣으면 틈이 1~2칸이 되어 점성 윤활막(양력)처럼 동작하기 때문.
 export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm = 0.1 } = {}, renderer = null) {
-  const { NX, NY, x0, dx, u0 } = grid;
+  const { NX, NY, x0, dx } = grid;
   const solid = new Uint8Array(NX * NY);
   const wux = new Float32Array(NX * NY);
   const wuy = new Float32Array(NX * NY);
@@ -565,15 +565,8 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
             for (let gy = g0; gy <= g1; gy++) {
               const c = gy * NX + gx;
               if (wheel) {
-                // 바퀴 표면 속도: 접지점이 노면과 같은 속도가 되도록 회전
-                const { cx, cy, r } = mesh.userData;
-                // 바퀴 중심은 바퀴 그룹(차 루트 기준) 좌표로 저장되어 있다
-                const wpos = new THREE.Vector3(cx, cy, 0).applyMatrix4(root.userData.wheels.matrixWorld);
-                const om = u0 / (r / dx);
-                if (!solid[c] || (solid[c] & 7) !== id) {
-                  wux[c] = -om * (gy - wpos.y / dx);
-                  wuy[c] = om * (gx - (wpos.x - x0) / dx);
-                }
+                // 바퀴는 회전시키지 않는다(벽 속도 0). 2D 단면에서는 바퀴가 차 아래를 위아래로 막아
+                // 회전하는 바퀴가 밀어 넣은 공기가 옆으로 빠지지 못하고 쌓여 계산이 발산하기 때문.
                 if (!solid[c]) solid[c] = id | 8;
               } else {
                 solid[c] = id;
@@ -587,5 +580,25 @@ export function rasterize(roots, grid, mode = 'center', { gap0 = 4, cellsPerMm =
       }
     }
   });
+  // 고체 사이에 낀 1칸 틈(예: 바퀴 아래와 노면 사이)은 메운다. 움직이는 두 벽 사이 1칸 유체는
+  // 공기를 계속 밀어 넣어 계산이 발산하고, 실제로도 접지면은 막혀 있다.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let gy = 1; gy < NY - 1; gy++) {
+      for (let gx = 1; gx < NX - 1; gx++) {
+        const c = gy * NX + gx;
+        if (solid[c]) continue;
+        const up = solid[c + NX];
+        const dn = gy === 1 ? 255 : solid[c - NX];
+        const l = solid[c - 1];
+        const r = solid[c + 1];
+        if ((up && dn) || (l && r)) {
+          const from = up ? c + NX : c - 1;
+          solid[c] = solid[from] && solid[from] !== 255 ? solid[from] : 1;
+          wux[c] = wux[from];
+          wuy[c] = wuy[from];
+        }
+      }
+    }
+  }
   return { solid, wux, wuy };
 }
