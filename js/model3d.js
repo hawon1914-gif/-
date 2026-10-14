@@ -305,7 +305,7 @@ function isWheelMesh(o) {
   return false;
 }
 
-export function fitImportedModel(object, car, { flipLong = false, flipUp = false } = {}) {
+export function fitImportedModel(object, car, { flipLong = false, flipUp = false, nativeScale = false } = {}) {
   const holder = new THREE.Group();
   holder.add(object);
   holder.updateMatrixWorld(true);
@@ -313,7 +313,17 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
   const size = box.getSize(new THREE.Vector3()).toArray();
   const order = [0, 1, 2].sort((a, b) => size[b] - size[a]);
   const axis = (i) => new THREE.Vector3(...[0, 1, 2].map((k) => (k === i ? 1 : 0)));
-  const eLong = axis(order[0]);
+  // 높이 = 가장 짧은 축. 길이는 보통 가장 긴 축이지만, 비행기처럼 폭(날개)이 더 긴 경우가 있어
+  // 바퀴가 3개 이상이면 남은 두 축 중 바퀴 중심이 더 넓게 퍼진 축(휠베이스 방향)을 길이로 본다.
+  let longIdx = order[0];
+  const named = [];
+  object.traverse((o) => { if (o.isMesh && isWheelMesh(o)) named.push(new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).toArray()); });
+  if (named.length >= 3) {
+    const spread = (k) => Math.max(...named.map((c) => c[k])) - Math.min(...named.map((c) => c[k]));
+    const [a, b] = order.slice(0, 2);
+    longIdx = spread(a) >= spread(b) ? a : b;
+  }
+  const eLong = axis(longIdx);
   const eUp = axis(order[2]);
   const eSide = new THREE.Vector3().crossVectors(eLong, eUp);
   // 모델 축 → 장면 축 회전 (행렬의 행이 모델 기준 단위벡터)
@@ -342,7 +352,7 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
   };
   // FL/FR(앞), BL/BR/RL/RR(뒤) 같은 바퀴 약어도 단서로 쓴다
   const fx = centerX(/head|windshield|windscreen|front|hood|bonnet|(^|[\s_])F[LR]?([\s_]|$)/i);
-  const rx = centerX(/tail|rear|back|(^|[\s_])[BR][LR]([\s_]|$)/i);
+  const rx = centerX(/tail|rear|back|(^|[\s_])[BR][LR]?([\s_]|$)/i);
   if (fx !== null && rx !== null && fx > rx) flipLong = !flipLong;
   if (flipLong) q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
   if (flipUp) q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI));
@@ -377,6 +387,7 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
       scale = car.wheelbase / (xr - xf);
     }
   }
+  if (nativeScale) scale = 1; // 모델 원래 크기(m) 유지
   const ground = (wheelMeshes.length ? boxOf(wheelMeshes) : box).min.y;
   const zc = (box.min.z + box.max.z) / 2;
   holder.scale.setScalar(scale);
@@ -396,12 +407,19 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
   bodyGroup.attach(holder);
   // 차체 로컬 y=0이 차체 바닥이 되도록 (모델 자체의 지상고는 버리고 프리셋 라이드하이트를 쓴다)
   bodyGroup.position.y = -bodyMinY;
-  for (const o of bodyMeshes) o.userData = { part: 'body' };
+  // 회전하는 프로펠러는 대부분 빈 공간이라 유동 계산에서는 빼고 보이기만 한다
+  for (const o of bodyMeshes) {
+    let prop = false;
+    for (let n = o; n; n = n.parent) if (n.name && /fan|propel/i.test(n.name)) prop = true;
+    o.userData = { part: prop ? 'deco' : 'body' };
+  }
   for (const o of meshes) {
     o.castShadow = true;
     (Array.isArray(o.material) ? o.material : [o.material]).forEach((mat) => { mat.side = THREE.DoubleSide; });
   }
-  return { bodyGroup, wheelGroup, wheels: wheelMeshes.length, scale };
+  // 격자 영역을 모델 크기에 맞추기 위한 앞끝·뒤끝 위치 (앞차축 x=0 기준)
+  const ext = boxOf(meshes);
+  return { bodyGroup, wheelGroup, wheels: wheelMeshes.length, scale, noseX: ext.min.x, tailX: ext.max.x, height: ext.max.y - ext.min.y, width: ext.max.z - ext.min.z };
 }
 
 // 윙류는 전체 실루엣으로 그리면 엔드플레이트가 윙 아래 공간을 막으므로 중앙 띠만 투영한다

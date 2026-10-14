@@ -1,4 +1,5 @@
 // 3D 모델 라이브러리. preset: 이 모델에 어울리는 차량 프리셋 (모델 선택 시 자동 전환)
+// scale: 'native'면 휠베이스에 맞추지 않고 모델 원래 크기를 쓴다
 export const MODELS = [
   { id: 'procedural', name: '차종별 기본 형상' },
   { id: 'carconcept', name: 'Car Concept (공개, CC BY 4.0)', file: 'assets/models/CarConcept.glb', preset: 'chiron', credit: 'carconcept' },
@@ -13,4 +14,6 @@ export const MODELS = [
   { id: 'van', name: '밴 (로우폴리)', file: 'assets/models/user/van.glb', preset: 'roadcar' },
   { id: 'monster-truck', name: '몬스터트럭 (로우폴리)', file: 'assets/models/user/monster-truck.glb', preset: 'roadcar' },
   { id: 'military', name: '군용차 (로우폴리)', file: 'assets/models/user/military.glb', preset: 'roadcar' },
+  // 비행기는 휠베이스에 맞추면 절반 크기가 되므로 원래 크기(m)를 유지한다
+  { id: 'airplane', name: '비행기 (로우폴리)', file: 'assets/models/user/airplane.glb', preset: 'roadcar', scale: 'native' },
 ];

@@ -104,6 +104,7 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
   let imported = null; // 원본 glTF 장면(복제해서 앞차/뒤차에 붙인다)
   let importFlip = { flipLong: false, flipUp: false };
   let importInfo = '';
+  let importOpts = {};
   let grid = null;
   let field = null;
   let worker = null;
@@ -114,6 +115,8 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
 
   function makeWorker() {
     if (worker) worker.terminate();
+    // 종료한 워커에 보낸 프레임 요청은 답이 오지 않으므로 대기 상태를 풀어 준다
+    pending = false;
     // 단일 파일 빌드에서는 워커 코드를 Blob URL로 미리 넣어 둔다 (file://에서도 동작)
     worker = new Worker(globalThis.AEROLAB_WORKER_URL ?? new URL('./lbm-worker.js', import.meta.url));
     worker.onmessage = (e) => {
@@ -126,17 +129,20 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
   }
 
   function gridFor() {
-    const L = car.length;
-    const fo = car.frontOverhang;
-    const tail = L - fo;
+    // 불러온 모델이 프리셋보다 크면(원래 크기 비행기 등) 모델 크기에 맞춰 영역을 넓힌다
+    const ext = main?.userData.extent;
+    const fo = Math.max(car.frontOverhang, ext ? -ext.noseX : 0);
+    const tail = Math.max(car.length - car.frontOverhang, ext ? ext.tailX : 0);
+    const L = fo + tail;
     const NX = opts.quality === 'hi' ? 560 : 400;
     const leadX = -opts.gap - L;
     const xStart = (opts.leader ? leadX - fo : -fo) - 0.5 * L;
     const xEnd = tail + 1.4 * L;
     const dx = (xEnd - xStart) / NX;
     // 천장이 낮으면 2D 막힘 효과로 차 위 흐름이 과하게 빨라진다 → 차 높이의 약 6배 확보
-    const NY = Math.min(Math.round(NX * 0.42), Math.max(64, Math.round(Math.max(car.height * 6, 0.26 * (xEnd - xStart)) / dx)));
-    return { NX, NY, dx, x0: xStart, u0: U0, leadX };
+    const H = Math.max(car.height, ext ? ext.height : 0);
+    const NY = Math.min(Math.round(NX * 0.42), Math.max(64, Math.round(Math.max(H * 6, 0.26 * (xEnd - xStart)) / dx)));
+    return { NX, NY, dx, x0: xStart, u0: U0, leadX, L, fo, tail };
   }
 
   // 물리 모델로 현재 조건의 라이드하이트·하중을 구한다
@@ -184,13 +190,15 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
 
   // 차(앞차 포함)가 화면에 들어오도록 카메라를 맞춘다
   function frameCamera() {
-    const x0 = (opts.leader ? grid.leadX : 0) - car.frontOverhang;
-    const x1 = car.length - car.frontOverhang;
+    const x0 = (opts.leader ? grid.leadX : 0) - grid.fo;
+    const x1 = grid.tail;
     const span = x1 - x0;
     const cx = (x0 + x1) / 2;
     const dir = camera.position.clone().sub(controls.target).normalize();
     controls.target.set(cx, 0.4, 0);
-    camera.position.copy(controls.target).add(dir.multiplyScalar(Math.max(8, span * 1.15)));
+    // 비행기처럼 폭이 길이보다 큰 모델도 화면에 들어오도록 폭도 고려한다
+    const width = main?.userData.extent?.width ?? car.width;
+    camera.position.copy(controls.target).add(dir.multiplyScalar(Math.max(8, span * 1.15, width * 1.6)));
   }
 
   function applyAttitude(immediate = false) {
@@ -244,7 +252,8 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
         g.remove(c);
       });
     }
-    const fit = fitImportedModel(imported.clone(true), car, importFlip);
+    const fit = fitImportedModel(imported.clone(true), car, { ...importFlip, nativeScale: importOpts.nativeScale });
+    root.userData.extent = { noseX: fit.noseX, tailX: fit.tailX, height: fit.height, width: fit.width };
     fit.bodyGroup.traverse((o) => { o.userData.shared = true; });
     fit.wheelGroup.traverse((o) => { o.userData.shared = true; });
     body.add(fit.bodyGroup);
@@ -262,7 +271,8 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
     return res.arrayBuffer();
   }
 
-  async function loadModel(source) {
+  async function loadModel(source, modelOpts = {}) {
+    importOpts = modelOpts;
     const name = source.name ?? source;
     status.textContent = `${name} 불러오는 중…`;
     const buf = typeof source === 'string' ? await fetchModel(source) : await source.arrayBuffer();
@@ -280,6 +290,7 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
 
   function clearModel() {
     imported = null;
+    importOpts = {};
     importInfo = '';
     rebuild();
   }
@@ -364,7 +375,7 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
   function forcesFor(id, root) {
     const f = field.force;
     const fx = f[id * 3], fy = f[id * 3 + 1], m = f[id * 3 + 2];
-    const Lc = car.length / grid.dx;
+    const Lc = grid.L / grid.dx;
     const qL = 0.5 * U0 * U0 * Lc;
     const cd = fx / qL;
     const cl = -fy / qL; // 다운포스 양수
@@ -384,8 +395,8 @@ export function createTunnel({ viewport, fieldCanvas, hud, status, getCar, getEn
     const s = modelState.s;
     const mm = forcesFor(1, main);
     const kg = (n) => (n / P.G).toFixed(0);
-    const Re = (U0 * (car.length / grid.dx)) / NU;
-    const ReReal = (P.toMs(opts.speedKmh) * car.length) / 1.5e-5;
+    const Re = (U0 * (grid.L / grid.dx)) / NU;
+    const ReReal = (P.toMs(opts.speedKmh) * grid.L) / 1.5e-5;
     const rows = [
       ['준정적 모델', `DF ${kg(s.df)} kgf (F ${kg(s.dfF)} · R ${kg(s.dfR)}) · 항력 ${kg(s.drag)} kgf · 밸런스 ${(s.balance * 100).toFixed(1)}% F`],
       ['차 자세', `라이드하이트 F ${modelState.hF.toFixed(1)} mm · R ${modelState.hR.toFixed(1)} mm${s.stalledFront || s.stalledRear ? ' · 실속' : ''}${modelState.a < 0 ? ` · 감속 ${(-modelState.a / P.G).toFixed(2)} G` : ''}`],

@@ -491,7 +491,7 @@ function bindTunnel() {
       $('car-select').value = m.preset;
       $('car-select').dispatchEvent(new Event('change'));
     }
-    tunnel.loadModel(m.file).catch(loadFailed);
+    tunnel.loadModel(m.file, { nativeScale: m.scale === 'native' }).catch(loadFailed);
   });
   $('tn-file').addEventListener('change', (e) => {
     const file = e.target.files?.[0];
