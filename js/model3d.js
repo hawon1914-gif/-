@@ -313,18 +313,26 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
   const size = box.getSize(new THREE.Vector3()).toArray();
   const order = [0, 1, 2].sort((a, b) => size[b] - size[a]);
   const axis = (i) => new THREE.Vector3(...[0, 1, 2].map((k) => (k === i ? 1 : 0)));
-  // 높이 = 가장 짧은 축. 길이는 보통 가장 긴 축이지만, 비행기처럼 폭(날개)이 더 긴 경우가 있어
-  // 바퀴가 3개 이상이면 남은 두 축 중 바퀴 중심이 더 넓게 퍼진 축(휠베이스 방향)을 길이로 본다.
+  // 기본: 높이 = 가장 짧은 축, 길이 = 가장 긴 축.
+  // 바퀴가 3개 이상이면 바퀴 배치로 판단한다: 바퀴 중심은 모두 같은 높이에 있으므로 퍼짐이 가장 작은 축이 높이,
+  // 휠베이스 방향으로 가장 넓게 퍼지므로 퍼짐이 가장 큰 축이 길이다. (날개가 긴 비행기, 폭보다 높은 만화풍 차 대응)
   let longIdx = order[0];
+  let upIdx = order[2];
   const named = [];
   object.traverse((o) => { if (o.isMesh && isWheelMesh(o)) named.push(new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).toArray()); });
+  let wheelUpSign = 0;
   if (named.length >= 3) {
     const spread = (k) => Math.max(...named.map((c) => c[k])) - Math.min(...named.map((c) => c[k]));
-    const [a, b] = order.slice(0, 2);
-    longIdx = spread(a) >= spread(b) ? a : b;
+    const byspread = [0, 1, 2].sort((a, b) => spread(b) - spread(a));
+    longIdx = byspread[0];
+    upIdx = byspread[2];
+    // 바퀴가 몸통 중심보다 위에 있으면 뒤집힌 것
+    const mid = (box.min.getComponent(upIdx) + box.max.getComponent(upIdx)) / 2;
+    const wheelMid = named.reduce((a, c) => a + c[upIdx], 0) / named.length;
+    wheelUpSign = wheelMid > mid ? -1 : 1;
   }
   const eLong = axis(longIdx);
-  const eUp = axis(order[2]);
+  const eUp = axis(upIdx).multiplyScalar(wheelUpSign < 0 ? -1 : 1);
   const eSide = new THREE.Vector3().crossVectors(eLong, eUp);
   // 모델 축 → 장면 축 회전 (행렬의 행이 모델 기준 단위벡터)
   const m = new THREE.Matrix4().set(
@@ -366,13 +374,27 @@ export function fitImportedModel(object, car, { flipLong = false, flipUp = false
   // 옆에서 봤을 때 둥글고(가로≈세로) 바닥에 닿아 있는 부품만 바퀴로 인정한다.
   const all = boxOf(meshes);
   const allH = all.max.y - all.min.y;
-  const wheelMeshes = meshes.filter((o) => {
-    if (!isWheelMesh(o)) return false;
+  // '바닥에 닿음'은 모델 전체가 아니라 바퀴 후보 중 가장 낮은 것 기준 (엉뚱한 곳에 놓인 부품이 기준을 망치지 않게)
+  const candidates = meshes.filter(isWheelMesh);
+  const lowest = candidates.length ? Math.min(...candidates.map((o) => new THREE.Box3().setFromObject(o).min.y)) : all.min.y;
+  const wheelMeshes = candidates.filter((o) => {
     const b = new THREE.Box3().setFromObject(o);
     const w = b.max.x - b.min.x;
     const h = b.max.y - b.min.y;
-    return Math.abs(w - h) / Math.max(w, h) < 0.3 && b.min.y < all.min.y + 0.25 * allH;
+    return Math.abs(w - h) / Math.max(w, h) < 0.3 && b.min.y < lowest + 0.25 * allH;
   });
+  // 바퀴 접지면보다 통째로 아래에 있는 부품은 원본 모델에서 잘못 놓인 것이므로 뺀다 (예: 땅속에 박힌 운전대)
+  if (wheelMeshes.length >= 2) {
+    const groundY = Math.min(...wheelMeshes.map((o) => new THREE.Box3().setFromObject(o).min.y));
+    for (let k = meshes.length - 1; k >= 0; k--) {
+      const o = meshes[k];
+      if (wheelMeshes.includes(o)) continue;
+      if (new THREE.Box3().setFromObject(o).max.y < groundY - 0.01 * allH) {
+        o.parent.remove(o);
+        meshes.splice(k, 1);
+      }
+    }
+  }
 
   box = boxOf(meshes);
   const midX = (box.min.x + box.max.x) / 2;

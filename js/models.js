@@ -14,6 +14,7 @@ export const MODELS = [
   { id: 'van', name: '밴 (로우폴리)', file: 'assets/models/user/van.glb', preset: 'roadcar' },
   { id: 'monster-truck', name: '몬스터트럭 (로우폴리)', file: 'assets/models/user/monster-truck.glb', preset: 'roadcar' },
   { id: 'military', name: '군용차 (로우폴리)', file: 'assets/models/user/military.glb', preset: 'roadcar' },
+  { id: 'cicada', name: 'Cicada 레트로 카툰카 (CC BY 4.0)', file: 'assets/models/user/cicada.glb', preset: 'roadcar' },
   // 비행기는 휠베이스에 맞추면 절반 크기가 되므로 원래 크기(m)를 유지한다
   { id: 'airplane', name: '비행기 (로우폴리)', file: 'assets/models/user/airplane.glb', preset: 'roadcar', scale: 'native' },
 ];
