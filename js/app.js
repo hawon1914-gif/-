@@ -36,12 +36,14 @@ function buildCarSelect() {
     state.car = cloneCar(sel.value);
     buildParams();
     tunnel?.carChanged();
+    drive?.carChanged();
     update();
   });
   $('reset-car').addEventListener('click', () => {
     state.car = cloneCar(state.carId);
     buildParams();
     tunnel?.carChanged();
+    drive?.carChanged();
     update();
   });
 }
@@ -508,6 +510,21 @@ function bindTunnel() {
   });
 }
 
+// ---------- 주행 ----------
+
+let drive = null;
+let driveLoading = false;
+function ensureDrive() {
+  if (drive || driveLoading) return;
+  driveLoading = true;
+  import('./drive-ui.js')
+    .then(({ createDrive }) => {
+      drive = createDrive({ root: $('tab-drive'), getCar: () => state.car, getCarId: () => state.carId, getEnv: () => state.env });
+      drive.setVisible(state.tab === 'drive');
+    })
+    .finally(() => { driveLoading = false; });
+}
+
 // ---------- 갱신 ----------
 
 let timer = null;
@@ -515,6 +532,7 @@ function scheduleUpdate() {
   clearTimeout(timer);
   timer = setTimeout(() => {
     tunnel?.paramsChanged();
+    drive?.carChanged();
     update();
   }, 120);
 }
@@ -522,7 +540,9 @@ function scheduleUpdate() {
 function update() {
   $('car-name').textContent = state.car.name;
   tunnel?.setVisible(state.tab === 'tunnel');
+  drive?.setVisible(state.tab === 'drive');
   if (state.tab === 'tunnel') ensureTunnel();
+  else if (state.tab === 'drive') ensureDrive();
   else if (state.tab === 'sweep') runSweep();
   else if (state.tab === 'braking') runBraking();
   else if (state.tab === 'slip') runSlip();
@@ -540,6 +560,7 @@ const redraw = () => {
   Object.values(charts).forEach((c) => c.draw());
   drawReplay();
   tunnel?.themeChanged();
+  drive?.themeChanged();
 };
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
 new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });

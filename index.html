@@ -173,6 +173,44 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
 .cb-row .colorbar { flex: 1; }
 #tn-field { width: 100%; display: block; border-radius: 2px; }
 .tn-status { font: 11px var(--font-data); color: var(--ink-2); }
+/* 주행 */
+.drive { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) 70px; gap: 12px; align-items: stretch; }
+@media (max-width: 900px) { .drive { grid-template-columns: minmax(0, 1fr) 70px; } .dv-mapbox { grid-column: 1 / -1; } }
+.dv-mapbox canvas { width: 100%; display: block; }
+.dash { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.dash-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.dv-big { font: 700 64px/0.9 var(--font-display); font-variant-numeric: tabular-nums; }
+.dv-big small { font: 500 13px var(--font-data); color: var(--ink-2); margin-left: 4px; }
+.dv-gear { font: 700 72px/0.85 var(--font-display); color: var(--accent); min-width: 0.7em; text-align: center; }
+.dv-leds { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; }
+.dv-leds i { height: 10px; border-radius: 2px; background: var(--grid); }
+.dv-leds i.g { background: var(--ok); } .dv-leds i.y { background: var(--rear); } .dv-leds i.r { background: var(--drag); }
+.dv-meter { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); }
+.dv-meter b { font: 500 13px var(--font-data); color: var(--ink); min-width: 52px; text-align: right; }
+.dv-meter .bar { height: 10px; background: var(--grid); border-radius: 2px; overflow: hidden; }
+.dv-meter .bar i { display: block; height: 100%; width: 0; background: var(--ink); }
+.dv-meter .bar.boost i { background: var(--front); }
+.dv-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+.dv-times div { display: flex; flex-direction: column; }
+.dv-times span { font: 600 11px var(--font-body); letter-spacing: 0.06em; color: var(--ink-2); }
+.dv-times b { font: 500 18px var(--font-data); font-variant-numeric: tabular-nums; }
+#dv-delta.fast { color: var(--ok); } #dv-delta.slow { color: var(--drag); }
+.dv-flags { display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px; }
+.flag { font: 600 12px var(--font-body); padding: 3px 8px; border-radius: 3px; color: var(--bg); }
+.flag.bad { background: var(--drag); } .flag.warn { background: var(--warn); }
+.dv-invalid { margin: 0; font-size: 13px; color: var(--drag); font-weight: 600; }
+.pedals { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pbar { position: relative; background: var(--grid); border-radius: 3px; overflow: hidden; min-height: 160px; }
+.pbar i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--drag); }
+.pbar.gas i { background: var(--ok); }
+.pbar span { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); writing-mode: vertical-rl; font-size: 11px; color: var(--ink); }
+.dv-buttons { display: grid; grid-template-columns: 1fr 1.4fr 1.4fr 1fr; gap: 8px; }
+.dv-buttons button { padding: 14px 8px; touch-action: none; user-select: none; }
+.dv-buttons .pedal.on { background: var(--ink); color: var(--bg); }
+@media (max-width: 560px) { .dv-buttons { grid-template-columns: 1fr 1fr; } }
+.dv-laps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font: 13px var(--font-data); }
+.dv-laps li { display: grid; grid-template-columns: 60px 1fr auto; gap: 8px; }
+.dv-laps b { font-weight: 500; } .dv-laps b.invalid { color: var(--ink-2); text-decoration: line-through; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 </head>
@@ -212,6 +250,7 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
     </div>
     <div role="tablist" aria-label="실험">
       <button role="tab" data-tab="tunnel" type="button">3D 풍동</button>
+      <button role="tab" data-tab="drive" type="button">주행</button>
       <button role="tab" data-tab="sweep" type="button">속도 스윕</button>
       <button role="tab" data-tab="braking" type="button">브레이킹</button>
       <button role="tab" data-tab="slip" type="button">슬립스트림</button>
@@ -269,6 +308,62 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
       <p class="note">공기 흐름은 차의 2D 단면에서 실제 유체 방정식(격자 볼츠만법)으로 계산합니다. 3D 유선은 그 단면 결과를 차폭 방향으로 펼쳐 보여주는 것이라 차 옆을 돌아 나가는 흐름은 없습니다. 격자 레이놀즈수가 실제보다 수천 배 작고 칸 크기가 수 cm라서, 박리·후류·지면효과의 경향은 보이지만 측정 계수를 실제 값으로 읽으면 안 됩니다. 라이드하이트는 격자에서 4칸 + 10mm당 1칸으로 과장합니다. 수 cm 칸에 실제 틈을 그대로 넣으면 틈이 1~2칸이 되어, 낮은 레이놀즈수에서 바닥이 오히려 양력을 받는 윤활막처럼 동작하기 때문입니다. 흰색은 자유류와 같은 속도, 파랑은 느린 공기, 빨강은 빠른 공기입니다.</p>
       <p class="note">앞차를 넣으면 뒤차의 항력 감소(슬립스트림)는 실제와 같은 방향으로 나옵니다. 하지만 2D에서는 후류 소용돌이가 옆으로 빠지지 못해 실제보다 훨씬 강하고, 다운포스는 오히려 늘어나게 나올 수 있습니다. 더티 에어로 인한 다운포스 손실은 FIA 수치에 맞춘 준정적 모델(슬립스트림 탭) 쪽을 믿으세요.</p>
     </section>
+    <section class="tabpanel" id="tab-drive" role="tabpanel" hidden>
+      <div class="controls">
+        <label for="dv-track">트랙 <select id="dv-track"></select></label>
+        <span class="seg" role="radiogroup" aria-label="변속기">
+          <input type="radio" name="dv-gearbox" id="dv-gb-manual" value="manual" checked><label for="dv-gb-manual">수동 변속</label>
+          <input type="radio" name="dv-gearbox" id="dv-gb-auto" value="auto"><label for="dv-gb-auto">자동 변속</label>
+        </span>
+        <span class="seg" role="radiogroup" aria-label="운전">
+          <input type="radio" name="dv-driver" id="dv-drv-me" value="me" checked><label for="dv-drv-me">직접 운전</label>
+          <input type="radio" name="dv-driver" id="dv-drv-ai" value="ai"><label for="dv-drv-ai">AI (이상 라인)</label>
+        </span>
+        <label for="dv-guide"><input id="dv-guide" type="checkbox" checked> 브레이크 구간 표시</label>
+        <button id="dv-restart" type="button">처음부터 (R)</button>
+      </div>
+      <div class="drive">
+        <figure class="dv-mapbox">
+          <figcaption>트랙 <span>빨간 구간: 이상 라인에서 브레이크를 밟는 곳</span></figcaption>
+          <canvas id="dv-map"></canvas>
+        </figure>
+        <div class="dash">
+          <div class="dash-top">
+            <div class="dv-big"><span id="dv-speed">0</span><small>km/h</small></div>
+            <div class="dv-gear" id="dv-gear">N</div>
+          </div>
+          <div class="dv-leds" id="dv-leds"></div>
+          <div class="dv-meter"><span>RPM</span><div class="bar"><i id="dv-rpm-bar"></i></div><b id="dv-rpm">0</b></div>
+          <div class="dv-meter" id="dv-boost-row"><span>부스트</span><div class="bar boost"><i id="dv-boost-bar"></i></div></div>
+          <div class="dv-times">
+            <div><span>현재 랩</span><b id="dv-lap">0:00.000</b></div>
+            <div><span>베스트 대비</span><b id="dv-delta">±0.00</b></div>
+            <div><span>지난 랩</span><b id="dv-last">–</b></div>
+            <div><span>베스트</span><b id="dv-best">–</b></div>
+            <div><span>이상 랩 (계산)</span><b id="dv-ideal">–</b></div>
+          </div>
+          <div class="dv-flags" id="dv-flags"></div>
+          <p class="dv-invalid" id="dv-valid" hidden>이번 랩 무효 (트랙 이탈)</p>
+          <p class="note" id="dv-engine"></p>
+        </div>
+        <div class="pedals">
+          <div class="pbar"><i id="dv-brk-bar"></i><span>브레이크</span></div>
+          <div class="pbar gas"><i id="dv-thr"></i><span>가속</span></div>
+        </div>
+      </div>
+      <div class="dv-buttons">
+        <button id="dv-down" type="button">◀ 기어 다운 (Q)</button>
+        <button id="dv-brk" class="pedal brk" type="button">브레이크 (↓ / S / Space)</button>
+        <button id="dv-gas" class="pedal gas" type="button">가속 (↑ / W)</button>
+        <button id="dv-up" type="button">기어 업 (E) ▶</button>
+      </div>
+      <p class="note">조향은 트랙 라인을 자동으로 따라갑니다. 가속·브레이크·변속만 직접 합니다. 코너에 한계보다 빠르게 들어가면 트랙을 벗어나 감속하고 그 랩은 무효가 됩니다. 저단 변속은 회전수가 레드존을 넘으면 거부됩니다. 게임패드(표준 배치)는 RT 가속, LT 브레이크, RB/LB 변속입니다. <span id="dv-pad"></span></p>
+      <div class="charts dv-bottom">
+        <figure><figcaption>속도 비교 <span>점선: 이상 랩 · 파랑: 베스트 · 주황: 현재 랩</span></figcaption><div class="cw"><canvas id="dv-chart"></canvas></div></figure>
+        <figure><figcaption>랩 기록</figcaption><ol class="dv-laps" id="dv-laps"></ol></figure>
+      </div>
+    </section>
+
     <section class="tabpanel" id="tab-sweep" role="tabpanel" hidden>
       <p class="lede">정속 주행에서 속도별로 다운포스, 항력, 차 자세, 한계 G가 어떻게 바뀌는지 봅니다. 다운포스는 속도 제곱에 비례하지만, 차체가 내려앉으며 지면효과가 바뀌기 때문에 정확한 제곱은 아닙니다.</p>
       <div class="kpis" id="sweep-kpis"></div>
