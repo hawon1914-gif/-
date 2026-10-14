@@ -1,54 +1,49 @@
 # Aero Lab
 
-A lab for testing aerodynamics, load transfer, and slipstream from a sim racing perspective.
-It compares F1 (2021 and 2022 regulations), LMH/LMDh hypercars, Valkyrie- and Chiron-class road hypercars, GT3, and high-performance road cars under the same conditions.
+심레이싱 관점에서 공기역학, 하중 이동, 슬립스트림을 실험하는 프로그램입니다.
+F1(2021·2022 규정), LMH/LMDh 하이퍼카, Valkyrie급·Chiron급 로드 하이퍼카, GT3, 고성능 로드카를 같은 조건에서 비교합니다.
 
-## Running it
+## 실행
 
-ES modules don't run when you open the file directly (`file://`), so you have to open it through a local server. No internet connection is needed (three.js is included in the repository).
+**`dist/AeroLab.html`을 더블클릭하면 끝입니다.** 서버도, 인터넷도, 설치도 필요 없습니다. 3D 엔진, 유체 해석기, 차량 모델이 전부 이 파일 하나에 들어 있습니다. (크롬·엣지 권장)
 
-- **Windows**: double-click `start.bat`
-- **macOS / Linux**: run `./start.sh` in a terminal
-
-Either one opens http://localhost:8000 in your browser. Python 3 is required. If it isn't installed, get it from https://www.python.org.
-
-To run it manually:
+코드를 고친 뒤 단일 파일을 다시 만들려면:
 
 ```bash
-python3 -m http.server 8000
+npm install
+npm run build   # dist/AeroLab.html 생성
+npm test        # 물리 모델 테스트
 ```
 
-Tests (Node 18+):
+개발 중에는 `start.bat`(Windows) 또는 `./start.sh`(macOS·Linux)로 로컬 서버를 띄워 `index.html`을 직접 열 수 있습니다. 이 방법은 Python 3가 필요합니다.
 
-```bash
-node --test tests/*.test.mjs
-```
+## 실험
 
-## Experiments
-
-| Tab | Contents |
+| 탭 | 내용 |
 | --- | --- |
-| 3D wind tunnel | Per-car 3D model + real-time 2D lattice Boltzmann flow solver (center section / side silhouette), 3D streamlines, full-braking attitude, leading car's wake, loading a .glb model |
-| Speed sweep | Front/rear downforce and drag vs. speed, ride height, max braking and lateral G, required power, top speed |
-| Braking | Deceleration G, load transfer, change in downforce and aero balance from nose dive, limiting axle, ideal bias, comparison with rigid aero, attitude replay |
-| Slipstream | Drag reduction and downforce loss vs. gap (front and rear separately), cornering G in dirty air, straight-line drag race (overtaking point, DRS) |
-| Car comparison | All presets under the same conditions |
+| 3D 풍동 | 차종별 3D 모델과 실시간 2D 격자 볼츠만 유동 해석(중앙 단면/측면 실루엣), 3D 유선, 풀 브레이킹 자세, 앞차 후류, .glb 모델 불러오기 |
+| 속도 스윕 | 속도별 앞/뒤 다운포스와 항력, 라이드하이트, 최대 감속·횡G, 필요 출력, 최고속도 |
+| 브레이킹 | 감속 G, 하중 이동, 노즈 다이브에 따른 다운포스·에어로 밸런스 변화, 한계 축, 이상적 바이어스, 강체 에어로와 비교, 자세 리플레이 |
+| 슬립스트림 | 간격별 항력 감소와 다운포스 손실(앞/뒤 따로), 더티 에어 속 코너링 G, 직선 드래그 레이스(추월 지점, DRS) |
+| 차량 비교 | 전체 프리셋을 같은 조건에서 비교 |
 
-## Model
+## 모델
 
-- **Quasi-static model**: not CFD. It combines a coefficient-based aero map that depends on ride height, load transfer, and a tire load-sensitivity model, the same approach sim racing physics engines use.
-- **3D wind tunnel**: solves the fluid equations on a 2D section of the car using the lattice Boltzmann method. The grid Reynolds number is thousands of times smaller than reality, so read the coefficients as relative trends, not real values.
+- **준정적 모델**: CFD가 아닙니다. 라이드하이트에 따라 바뀌는 계수 기반 에어로맵, 하중 이동, 타이어 하중 민감도 모델을 결합합니다. 심레이싱 물리엔진과 같은 방식입니다.
+- **3D 풍동**: 차의 2D 단면에서 격자 볼츠만법으로 유체 방정식을 풉니다. 격자 레이놀즈수가 실제보다 수천 배 작으므로 계수는 실제 값이 아니라 상대적인 경향으로 읽어야 합니다.
 
-All preset values are estimates based on public sources. The "Model" tab in the app lists the formulas used and what is left out.
+프리셋 값은 모두 공개 자료를 바탕으로 한 추정치입니다. 사용한 수식과 빠진 요소는 앱의 "모델 설명" 탭에 있습니다.
 
-## Files
+## 파일
 
-- `js/physics.js`: physics model (pure functions)
-- `js/cars.js`: car presets and the parameter schema
-- `js/model3d.js`: procedural 3D models, glTF alignment, geometry-to-grid conversion
-- `js/lbm-worker.js`: lattice Boltzmann fluid solver (Web Worker)
-- `js/tunnel.js`: three.js scene, streamlines, measured values
-- `js/chart.js`, `js/carview.js`: charts and side view
+- `js/physics.js`: 물리 모델(순수 함수)
+- `js/cars.js`: 차량 프리셋과 파라미터 스키마
+- `js/model3d.js`: 절차적 3D 모델, glTF 정렬, 형상을 격자로 변환
+- `js/lbm-worker.js`: 격자 볼츠만 유체 해석기(Web Worker)
+- `js/tunnel.js`: three.js 장면, 유선, 측정값
+- `js/chart.js`, `js/carview.js`: 차트와 측면도
 - `js/app.js`: UI
-- `vendor/three/`: three.js r160 (MIT license)
-- `assets/models/`: public 3D models (see the README in that folder for licenses)
+- `build.mjs`: 단일 HTML 빌드 스크립트(esbuild)
+- `dist/AeroLab.html`: 빌드 결과물. 이 파일만 있으면 실행됩니다
+- `vendor/three/`: three.js r160(MIT 라이선스)
+- `assets/models/`: 공개 3D 모델(라이선스는 해당 폴더의 README 참고)
