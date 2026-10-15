@@ -161,7 +161,7 @@ function explain(S, g, cal, ref, hasSlip) {
   const s0 = S[on];
   const verb = { spin: '차가 돌기', off: '트랙을 벗어나기', wide: '트랙 밖으로 밀려나기', impact: '충격', stop: '멈추기' }[g.kind];
   const causes = [];
-  const add = (w, text) => causes.push({ w, text });
+  const add = (w, key, label, fix, text) => causes.push({ w, key, label, fix, text });
   const W2 = windowAt(S, on, 2), W1 = windowAt(S, on, 1), W07 = windowAt(S, on, 0.7);
   const turning = Math.abs(s0.steer ?? 0) > 0.1 || Math.abs(s0._k) > 1 / 300;
 
@@ -191,11 +191,11 @@ function explain(S, g, cal, ref, hasSlip) {
   // 진입 속도 (기준 랩 있을 때만)
   if (R && g.kind !== 'stop') {
     const dv = (s0.v - R.v[k0]) * KMH;
-    if (dv > 4 && phase !== '코너 탈출') add(dv / 4, `같은 지점에서 기준 랩보다 ${dv.toFixed(0)} km/h 빨랐습니다 (${(s0.v * KMH).toFixed(0)} vs ${(R.v[k0] * KMH).toFixed(0)} km/h). 브레이크를 조금 더 일찍 또는 강하게.`);
+    if (dv > 4 && phase !== '코너 탈출') add(dv / 4, 'entrySpeed', `진입 ${dv.toFixed(0)} km/h 빠름`, '더 일찍·강하게 제동', `같은 지점에서 기준 랩보다 ${dv.toFixed(0)} km/h 빨랐습니다 (${(s0.v * KMH).toFixed(0)} vs ${(R.v[k0] * KMH).toFixed(0)} km/h). 브레이크를 조금 더 일찍 또는 강하게.`);
   }
   // 그립 한계: 이 기록에서 낸 가장 큰 횡G 근처였다
   const gyNow = Math.max(...W07.map((x) => Math.abs(x._gy)));
-  if (cal.gyMax && cal.gyMax > 0.5 && gyNow > cal.gyMax * 0.9 && g.kind !== 'stop' && s0.v > 8) add(1.5, `직전 횡G가 ${gyNow.toFixed(1)} g로 이 기록에서 낸 최대치(${cal.gyMax.toFixed(1)} g) 근처였습니다. 타이어가 한계였고, 속도가 조금만 높아도 버티지 못합니다.`);
+  if (cal.gyMax && cal.gyMax > 0.5 && gyNow > cal.gyMax * 0.9 && g.kind !== 'stop' && s0.v > 8) add(1.5, 'gripLimit', `그립 한계 (${gyNow.toFixed(1)} g)`, '코너 속도 조금 낮추기', `직전 횡G가 ${gyNow.toFixed(1)} g로 이 기록에서 낸 최대치(${cal.gyMax.toFixed(1)} g) 근처였습니다. 타이어가 한계였고, 속도가 조금만 높아도 버티지 못합니다.`);
   // 스로틀을 급하게·많이
   const thrMin = Math.min(...W07.map((x) => x.thr ?? 0));
   const rise = (s0.thr ?? 0) - thrMin;
@@ -203,12 +203,12 @@ function explain(S, g, cal, ref, hasSlip) {
   const refRise = bw07 ? (bw07[bw07.length - 1].thr ?? 0) - Math.min(...bw07.map((x) => x.thr ?? 0)) : 0;
   const tr = B ? B[bj].thr ?? 0 : null;
   if ((s0.thr ?? 0) > 0.45 && rise > 0.35 && turning && (!B || rise > refRise + 0.3 || s0.thr > tr + 0.25)) {
-    add(1.5 + rise * 2, `${verb} 직전에 조향이 남은 상태(${pct(Math.abs(s0.steer ?? 0))})에서 스로틀을 ${pct(thrMin)}→${pct(s0.thr)}로 열었습니다${B ? ` (기준 랩은 같은 지점에서 ${pct(tr)})` : ''}. 핸들을 푸는 만큼만 천천히 여세요.`);
+    add(1.5 + rise * 2, 'throttleSteer', `조향 중 급가속 (${pct(thrMin)}→${pct(s0.thr)})`, '핸들 푸는 만큼만 가속', `${verb} 직전에 조향이 남은 상태(${pct(Math.abs(s0.steer ?? 0))})에서 스로틀을 ${pct(thrMin)}→${pct(s0.thr)}로 열었습니다${B ? ` (기준 랩은 같은 지점에서 ${pct(tr)})` : ''}. 핸들을 푸는 만큼만 천천히 여세요.`);
   }
   // 조향을 많이 감은 채 가속: 앞이 밀린다 (런오프·이탈일 때)
   if (g.kind === 'wide' || g.kind === 'off') {
     const x = windowAt(S, on, 2.5).find((y) => (y.thr ?? 0) > 0.4 && Math.abs(y.steer ?? 0) > 0.5);
-    if (x) add(2, `조향을 ${pct(Math.abs(x.steer))}까지 감은 채 스로틀 ${pct(x.thr)}로 가속했습니다. 앞 타이어가 조향과 가속을 함께 감당하지 못해 바깥으로 밀렸습니다(언더스티어). 꼭짓점에서 차를 먼저 돌려 핸들을 푼 뒤 가속하세요.`);
+    if (x) add(2, 'throttleSteer', `조향 ${pct(Math.abs(x.steer))} + 스로틀 ${pct(x.thr)}`, '차를 먼저 돌리고 가속', `조향을 ${pct(Math.abs(x.steer))}까지 감은 채 스로틀 ${pct(x.thr)}로 가속했습니다. 앞 타이어가 조향과 가속을 함께 감당하지 못해 바깥으로 밀렸습니다(언더스티어). 꼭짓점에서 차를 먼저 돌려 핸들을 푼 뒤 가속하세요.`);
   }
   // 휠스핀·잠김 (바퀴 회전비를 직진 때 값과 비교)
   if (cal.wheel && s0.wr) {
@@ -216,38 +216,38 @@ function explain(S, g, cal, ref, hasSlip) {
     const rs = W1.filter((x) => x.wr).map((x) => ratio(x.wr));
     const hi = Math.max(...rs), lo = Math.min(...rs);
     const braking = W1.some((x) => (x.brk ?? 0) > 0.2);
-    if (hi > 1.08 && (s0.thr ?? 0) > 0.3) add(2 + (hi - 1) * 10, `뒷바퀴가 앞바퀴보다 ${((hi - 1) * 100).toFixed(0)}% 빨리 돌았습니다 (휠스핀). 뒤 타이어가 횡 그립을 잃었습니다.`);
-    if (lo < 0.9 && braking) add(2 + (1 - lo) * 10, `제동 중 뒷바퀴가 앞바퀴보다 ${((1 - lo) * 100).toFixed(0)}% 느리게 돌았습니다 (뒷바퀴 잠김). 브레이크 밸런스가 뒤로 가 있거나 다운시프트가 너무 빨랐을 수 있습니다.`);
-    if (hi > 1.12 && braking) add(2, '제동 중 앞바퀴가 거의 멈췄습니다 (앞바퀴 잠김). 초기 제동은 강하게, 회전하면서는 브레이크를 풀어 주세요.');
+    if (hi > 1.08 && (s0.thr ?? 0) > 0.3) add(2 + (hi - 1) * 10, 'wheelspin', `휠스핀 ${((hi - 1) * 100).toFixed(0)}%`, '스로틀 더 천천히', `뒷바퀴가 앞바퀴보다 ${((hi - 1) * 100).toFixed(0)}% 빨리 돌았습니다 (휠스핀). 뒤 타이어가 횡 그립을 잃었습니다.`);
+    if (lo < 0.9 && braking) add(2 + (1 - lo) * 10, 'rearLock', '뒷바퀴 잠김', '다운시프트 늦추기·밸런스 앞으로', `제동 중 뒷바퀴가 앞바퀴보다 ${((1 - lo) * 100).toFixed(0)}% 느리게 돌았습니다 (뒷바퀴 잠김). 브레이크 밸런스가 뒤로 가 있거나 다운시프트가 너무 빨랐을 수 있습니다.`);
+    if (hi > 1.12 && braking) add(2, 'frontLock', '앞바퀴 잠김', '회전하며 브레이크 풀기', '제동 중 앞바퀴가 거의 멈췄습니다 (앞바퀴 잠김). 초기 제동은 강하게, 회전하면서는 브레이크를 풀어 주세요.');
   }
   // 리프트오프
   const thrPrev = Math.max(...W1.slice(0, -12).map((x) => x.thr ?? 0), 0);
   const bw1 = BW ? BW(1) : null;
   const refLift = bw1 ? Math.max(...bw1.slice(0, -12).map((x) => x.thr ?? 0), 0) - (B[bj].thr ?? 0) : 0;
-  if (thrPrev > 0.7 && (s0.thr ?? 0) < 0.2 && turning && (s0.brk ?? 0) < 0.2 && refLift < 0.4 && s0.v > 8) add(2.5, `코너 안에서 스로틀을 ${pct(thrPrev)}에서 갑자기 뗐습니다. 하중이 앞으로 쏠려 리어가 가벼워지는 리프트오프 오버스티어입니다. 떼야 하면 천천히.`);
+  if (thrPrev > 0.7 && (s0.thr ?? 0) < 0.2 && turning && (s0.brk ?? 0) < 0.2 && refLift < 0.4 && s0.v > 8) add(2.5, 'liftoff', '코너 중 스로틀 급히 뗌', '뗄 때는 천천히', `코너 안에서 스로틀을 ${pct(thrPrev)}에서 갑자기 뗐습니다. 하중이 앞으로 쏠려 리어가 가벼워지는 리프트오프 오버스티어입니다. 떼야 하면 천천히.`);
   // 회전 중 제동
   const tb = B ? B[bj].brk ?? 0 : null;
-  if ((s0.brk ?? 0) > 0.4 && Math.abs(s0.steer ?? 0) > 0.25 && (!B || s0.brk > tb + 0.2)) add(1.5 + s0.brk * 2, `조향 ${pct(Math.abs(s0.steer))} 상태에서 브레이크가 ${pct(s0.brk)}였습니다${B ? ` (기준 랩 ${pct(tb)})` : ''}. 회전 중 강한 제동은 리어 하중을 빼서 차를 돌게 만듭니다. 직선에서 더 세게 밟고 턴인하면서 푸세요.`);
+  if ((s0.brk ?? 0) > 0.4 && Math.abs(s0.steer ?? 0) > 0.25 && (!B || s0.brk > tb + 0.2)) add(1.5 + s0.brk * 2, 'brakeTurn', `조향 중 강한 제동 ${pct(s0.brk)}`, '직선에서 제동 끝내기', `조향 ${pct(Math.abs(s0.steer))} 상태에서 브레이크가 ${pct(s0.brk)}였습니다${B ? ` (기준 랩 ${pct(tb)})` : ''}. 회전 중 강한 제동은 리어 하중을 빼서 차를 돌게 만듭니다. 직선에서 더 세게 밟고 턴인하면서 푸세요.`);
   // 다운시프트
   for (let j = on; j > 0 && S[j].t > s0.t - 1 && S[j - 1]._seg === S[j]._seg; j--) {
     if (S[j].gear > 0 && S[j - 1].gear > S[j].gear) {
       const over = S[j].maxRpm && S[j].rpm > S[j].maxRpm * 0.92;
-      add(over ? 3 : 1.2, `${verb} ${(s0.t - S[j].t).toFixed(1)}초 전에 ${S[j - 1].gear}→${S[j].gear}단으로 내렸습니다${over ? ` (회전수 ${S[j].rpm}/${S[j].maxRpm}, 한계 근처)` : ''}. 엔진 브레이크가 뒷바퀴를 붙잡았을 수 있습니다. 속도가 더 떨어진 뒤 내리세요.`);
+      add(over ? 3 : 1.2, 'downshift', `이른 다운시프트 ${S[j - 1].gear}→${S[j].gear}`, '속도 더 줄인 뒤 변속', `${verb} ${(s0.t - S[j].t).toFixed(1)}초 전에 ${S[j - 1].gear}→${S[j].gear}단으로 내렸습니다${over ? ` (회전수 ${S[j].rpm}/${S[j].maxRpm}, 한계 근처)` : ''}. 엔진 브레이크가 뒷바퀴를 붙잡았을 수 있습니다. 속도가 더 떨어진 뒤 내리세요.`);
       break;
     }
   }
   // 급조향
   const rate = steerRate(W1);
   const refRate = bw1 ? steerRate(bw1) : 0;
-  if (rate > 1.5 && (!B ? rate > 3 : rate > refRate * 1.6)) add(1 + rate / Math.max(0.5, refRate || 1.5), `조향을 급하게 꺾었습니다 (초당 ${pct(rate)}${B ? `, 기준 랩은 ${pct(refRate)}` : ''}). 패드는 스틱을 빨리 끝까지 밀기 쉬우니, 턴인을 조금 일찍 시작해 천천히 감으세요.`);
+  if (rate > 1.5 && (!B ? rate > 3 : rate > refRate * 1.6)) add(1 + rate / Math.max(0.5, refRate || 1.5), 'steerRate', '급조향', '턴인 일찍, 천천히 감기', `조향을 급하게 꺾었습니다 (초당 ${pct(rate)}${B ? `, 기준 랩은 ${pct(refRate)}` : ''}). 패드는 스틱을 빨리 끝까지 밀기 쉬우니, 턴인을 조금 일찍 시작해 천천히 감으세요.`);
   // 중립 기어로 굴러감
   const neutral = W2.filter((x) => x.gear === 0 && x.v > 3).length;
-  if (W2.length > 10 && neutral / W2.length > 0.6) add(2.5, `${verb} 전 ${(W2[W2.length - 1].t - W2[0].t).toFixed(1)}초 동안 기어가 중립(N)이었습니다. 엔진 브레이크도 구동도 없이 굴러간 상태라 차를 제어할 수 없었습니다.`);
+  if (W2.length > 10 && neutral / W2.length > 0.6) add(2.5, 'neutral', '중립(N) 기어', '기어 넣고 주행', `${verb} 전 ${(W2[W2.length - 1].t - W2[0].t).toFixed(1)}초 동안 기어가 중립(N)이었습니다. 엔진 브레이크도 구동도 없이 굴러간 상태라 차를 제어할 수 없었습니다.`);
   // 입력 없음
   const idle = W2.filter((x) => (x.thr ?? 0) < 0.05 && (x.brk ?? 0) < 0.05 && Math.abs(x.steer ?? 0) < 0.05).length;
-  if (W2.length > 10 && idle / W2.length > 0.9 && s0.v > 5) add(2.5, `${verb} 전 2초 동안 페달·조향 입력이 거의 없었습니다 (${(s0.v * KMH).toFixed(0)} km/h로 굴러가는 중). 손을 뗐거나 게임 메뉴가 열려 있었을 수 있습니다.`);
+  if (W2.length > 10 && idle / W2.length > 0.9 && s0.v > 5) add(2.5, 'idle', '입력 없음', '', `${verb} 전 2초 동안 페달·조향 입력이 거의 없었습니다 (${(s0.v * KMH).toFixed(0)} km/h로 굴러가는 중). 손을 뗐거나 게임 메뉴가 열려 있었을 수 있습니다.`);
   // 직전 트랙 밖
-  if (g.kind !== 'off' && W1.slice(0, -1).some((x) => x.off)) add(2, `${verb} 직전에 트랙 밖(잔디·흙·자갈)을 밟았습니다. 거기서 그립을 잃었습니다.`);
+  if (g.kind !== 'off' && W1.slice(0, -1).some((x) => x.off)) add(2, 'offBefore', '직전에 잔디·연석', '트랙 안쪽 유지', `${verb} 직전에 트랙 밖(잔디·흙·자갈)을 밟았습니다. 거기서 그립을 잃었습니다.`);
   // 가장자리를 넘은 거리
   let over = null;
   if ((g.kind === 'wide' || g.kind === 'off') && Number.isFinite(s0.lat)) {
@@ -257,25 +257,25 @@ function explain(S, g, cal, ref, hasSlip) {
   // 차가운 타이어 (절대 기준 60°C. 적정 온도는 차마다 다르고 LMU의 정확한 값은 모른다)
   if (s0.tire && s0.tire.every((x) => x > -200)) {
     const tt = s0.tire.reduce((a, b) => a + b, 0) / s0.tire.length;
-    if (tt < 60) add(1.8, `타이어가 ${tt.toFixed(0)}°C로 차가웠습니다. 레이스 타이어는 이보다 훨씬 뜨거워야 제 그립이 나옵니다 (아웃랩 초반이면 브레이크도 차갑습니다). 첫 바퀴는 제동을 일찍, 코너 속도는 낮게 잡으세요.`);
-    else if (cal.tire && tt < cal.tire - 12) add(1.5, `타이어 온도가 평소보다 ${(cal.tire - tt).toFixed(0)}°C 낮았습니다 (${tt.toFixed(0)}°C).`);
+    if (tt < 60) add(1.8, 'coldTire', `타이어 ${tt.toFixed(0)}°C`, '첫 바퀴 여유 있게', `타이어가 ${tt.toFixed(0)}°C로 차가웠습니다. 레이스 타이어는 이보다 훨씬 뜨거워야 제 그립이 나옵니다 (아웃랩 초반이면 브레이크도 차갑습니다). 첫 바퀴는 제동을 일찍, 코너 속도는 낮게 잡으세요.`);
+    else if (cal.tire && tt < cal.tire - 12) add(1.5, 'coldTire', `타이어 ${tt.toFixed(0)}°C`, '타이어 데우기', `타이어 온도가 평소보다 ${(cal.tire - tt).toFixed(0)}°C 낮았습니다 (${tt.toFixed(0)}°C).`);
   }
   // 충돌
   const imp = g.items.find((e) => e.kind === 'impact');
   if (imp) {
     const j = Math.min(S.length - 1, imp.i + 30);
     const drop = (S[Math.max(0, imp.i - 3)].v - S[j].v) * KMH;
-    add(3, imp.guessed ? `브레이크 없이 속도가 갑자기 ${drop.toFixed(0)} km/h 줄었습니다. 벽·방호벽·다른 차에 부딪힌 것으로 보입니다.` : `충격이 감지됐고 직후 속도가 ${drop.toFixed(0)} km/h 줄었습니다 (게임이 준 충격 세기 ${imp.mag}).`);
+    add(3, 'impact', imp.guessed ? '충돌 추정' : '충돌', '', imp.guessed ? `브레이크 없이 속도가 갑자기 ${drop.toFixed(0)} km/h 줄었습니다. 벽·방호벽·다른 차에 부딪힌 것으로 보입니다.` : `충격이 감지됐고 직후 속도가 ${drop.toFixed(0)} km/h 줄었습니다 (게임이 준 충격 세기 ${imp.mag}).`);
   }
   const near = nearestCar(S, on);
-  if (near && near.d < 8) add(2, `다른 차(${near.n || '?'})가 ${near.d.toFixed(1)} m 거리에 있었습니다. 접촉이나 더티 에어 영향일 수 있습니다.`);
+  if (near && near.d < 8) add(2, 'nearCar', `다른 차 ${near.d.toFixed(1)} m`, '', `다른 차(${near.n || '?'})가 ${near.d.toFixed(1)} m 거리에 있었습니다. 접촉이나 더티 에어 영향일 수 있습니다.`);
   // 라인 (기준 랩 있을 때)
   if (ref && corner && ref.offsetAt) {
     const off = ref.offsetAt(on);
-    if (Number.isFinite(off) && corner.turn * off < -1.5) add(1.2, `기준 라인보다 ${(-corner.turn * off).toFixed(1)} m 바깥에 있었습니다. 남은 트랙 폭이 없어서 작은 실수도 이탈로 이어졌습니다.`);
+    if (Number.isFinite(off) && corner.turn * off < -1.5) add(1.2, 'wideLine', `바깥 라인 ${(-corner.turn * off).toFixed(1)} m`, '라인 안쪽으로', `기준 라인보다 ${(-corner.turn * off).toFixed(1)} m 바깥에 있었습니다. 남은 트랙 폭이 없어서 작은 실수도 이탈로 이어졌습니다.`);
   }
   // 정지
-  if (g.kind === 'stop' && W2.some((x) => (x.brk ?? 0) > 0.8)) add(1, `브레이크를 끝까지 밟아 멈췄습니다. 왜 멈췄는지는 기록에 없습니다.`);
+  if (g.kind === 'stop' && W2.some((x) => (x.brk ?? 0) > 0.8)) add(1, 'stopBrake', '브레이크로 정지', '', `브레이크를 끝까지 밟아 멈췄습니다. 왜 멈췄는지는 기록에 없습니다.`);
 
   const peakSlip = hasSlip ? Math.max(...S.slice(on, Math.min(S.length, on + 180)).map((x) => Math.abs(x.slip || 0))) : null;
   // 진행 방향이 얼마나 돌았나 (스핀 크기)
@@ -284,7 +284,7 @@ function explain(S, g, cal, ref, hasSlip) {
     const e = Math.min(S.length - 1, g.last + 60);
     for (let j = on + 1; j <= e; j++) if (S[j]._seg === s0._seg && Number.isFinite(S[j]._h) && Number.isFinite(S[j - 1]._h)) turned += wrap(S[j]._h - S[j - 1]._h);
   }
-  if (g.endedAfter) add(0.5, '직후 기록이 끊겼습니다 (차고로 돌아가거나 리셋한 것으로 보입니다).');
+  if (g.endedAfter) add(0.5, 'ended', '직후 기록 끊김', '', '직후 기록이 끊겼습니다 (차고로 돌아가거나 리셋한 것으로 보입니다).');
   causes.sort((a, b) => b.w - a.w);
   const guessed = g.items.every((e) => e.guessed) && g.kind === 'impact';
   const name = { spin: hasSlip ? '스핀' : '스핀 (위치로 추정)', off: '트랙 이탈', wide: '트랙 밖으로 밀림', impact: guessed ? '충돌 (추정)' : '충돌', stop: '트랙 위 정지' }[g.kind];
@@ -292,6 +292,8 @@ function explain(S, g, cal, ref, hasSlip) {
     kind: g.kind, name, lap: s0.lap, t: s0.t, sample: on, refIdx: k0, corner: corner?.id ?? null, cornerIdx: corner ? ref.A.corners.indexOf(corner) : -1,
     phase, loss, endIdx, speed: s0.v * KMH, peakSlip, turned: Math.abs(deg(turned)), over, lapDist: s0.lapDist,
     x: s0.x, z: s0.z, recovery: g.recovered ? g.recovered - s0.t : null, extra: g.items.length,
+    // 원인: 짧은 이름(label)·고칠 점(fix)·자세한 설명(text). 정보성 항목(입력 없음·충돌 등)은 fix가 비어 있다.
+    reasons: causes.slice(0, 4),
     causes: causes.length ? causes.slice(0, 4).map((c) => c.text)
       : ['기록된 데이터(페달·조향·속도·위치)에서는 원인을 찾지 못했습니다. 노면·연석처럼 기록되지 않는 요인일 수 있고, 저도 원인을 모르겠습니다.'],
     evidence: hasSlip ? '' : '이 기록에는 차체 미끄러짐 각도·바퀴 회전이 없어(이전 브리지) 위치·페달·조향으로만 판단했습니다.',

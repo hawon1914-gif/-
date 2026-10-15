@@ -163,6 +163,8 @@ export function makeDemoSession(car, env, eng, track, { laps = 6, seed = 7, mist
         gear: S.gear, rpm: S.rpm, off: S.flags.offtrack > 0,
         lat: left, edge: EDGE,
       };
+      // 차 클래스 등 상태는 1초마다 (브리지와 같은 형식)
+      if (samples.length % 60 === 0) smp.info = { cls: 'GT3' };
       // 다른 차는 3샘플마다 (브리지와 같은 20 Hz)
       if (opp.length && samples.length % 3 === 0) {
         smp.cars = opp.filter((o) => o.started).map((o) => {

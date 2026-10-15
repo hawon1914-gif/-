@@ -356,6 +356,9 @@ class GameReader:
             'pit': bool(ps.mInPits or ps.mInGarageStall),
             # 누가 운전 중인가 (0 나, 1 AI, 2 원격, 3 리플레이)·게임의 랩 인정 (2 = 기록 인정)
             'ctrl': ps.mControl, 'cnt': ps.mCountLapFlag,
+            # 게임 공식 기록: 지금 섹터(1, 2, 0=3섹터), 지난 랩·베스트 랩 시간, 지난 랩의 1·2섹터 누적 시간
+            'sec': ps.mSector, 'll': round(ps.mLastLapTime, 3), 'bl': round(ps.mBestLapTime, 3),
+            'ls1': round(ps.mLastSector1, 3), 'ls2': round(ps.mLastSector2, 3),
             # 사고 분석용 차체 거동. rF2 차체 좌표: +x 왼쪽, +y 위, +z 뒤.
             # slip: 차가 향한 방향과 실제 진행 방향의 각도(도), yaw: 회전 속도(도/초), gx·gy: 가감속·횡 G
             'slip': round(math.degrees(math.atan2(vel.x, -vel.z)), 1) if abs(vel.z) + abs(vel.x) > 3 else 0.0,
@@ -373,11 +376,31 @@ class GameReader:
             self.last_impact = t.mLastImpactET
             if t.mLastImpactET > 0:
                 sample['imp'] = round(t.mLastImpactMagnitude, 1)
+        # 천천히 바뀌는 트랙·차 상태는 1초마다
+        if self.count % 60 == 1:
+            sample['info'] = self._info(info, t, ps)
         if self.count % 3 == 0:
             cars = self._others(snap, t.mID)
             if cars:
                 sample['cars'] = cars
         return sample
+
+    def _info(self, info, t, ps):
+        w = info.mWind
+        return {
+            'session': info.mSession, 'phase': info.mGamePhase, 'cls': text(ps.mVehicleClass),
+            'air': round(info.mAmbientTemp, 1), 'trackT': round(info.mTrackTemp, 1),
+            'rain': round(info.mRaining, 2), 'cloud': round(info.mDarkCloud, 2),
+            'wet': round(info.mAvgPathWetness, 2), 'wetMax': round(info.mMaxPathWetness, 2),
+            'wind': round(math.sqrt(w.x ** 2 + w.z ** 2), 1),
+            'fuel': round(t.mFuel, 1), 'fuelCap': round(t.mFuelCapacity, 1),
+            'press': [round(x.mPressure, 1) for x in t.mWheels],
+            'brakeT': [round(x.mBrakeTemp, 0) for x in t.mWheels],
+            'dfF': round(t.mFrontDownforce), 'dfR': round(t.mRearDownforce), 'drag': round(t.mDrag),
+            'rhF': round(t.mFrontRideHeight * 1000, 1), 'rhR': round(t.mRearRideHeight * 1000, 1),
+            'water': round(t.mEngineWaterTemp, 1), 'oil': round(t.mEngineOilTemp, 1),
+            'bias': round(1 - t.mRearBrakeBias, 3), 'place': ps.mPlace, 'pits': ps.mNumPitstops,
+        }
 
     def _others(self, snap, my_id):
         # 다른 차: 위치·속도는 텔레메트리, 이름·클래스·피트는 순위표에서.

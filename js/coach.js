@@ -3,7 +3,9 @@ import { calibrate, findIncidents, motion } from './incidents.js';
 // 입력 샘플 형식 (브리지·기록 파일·데모 공통):
 //   { t: 초, lap: 랩 번호, x, z: 평면 위치(m), v: 속도(m/s), thr, brk: 0~1, steer: -1~1, gear, rpm, off?: 트랙 이탈 여부,
 //     lat?, edge?: 트랙 중심선 기준 가로 위치·가장자리까지 거리(m, 게임이 줄 때),
-//     cars?: [{ id, n: 이름, c: 클래스, x, z, v, lap, pit }] 다른 차들 (온라인·AI 세션, 몇 샘플마다) }
+//     ll?, bl?, ls1?, ls2?, sec?: 게임 공식 지난 랩·베스트 랩·지난 랩 1·2섹터 누적 시간, 지금 섹터 (1, 2, 0=3섹터),
+//     info?: { cls, air, trackT, rain, wet, ... } 트랙·차 상태 (1초마다),
+//     cars?: [{ id, n: 이름, c: 클래스, x, z, v, lap, pit, best, last }] 다른 차들 (온라인·AI 세션, 몇 샘플마다) }
 
 const KMH = 3.6;
 
@@ -28,8 +30,14 @@ export function splitLaps(samples) {
   if (cur) laps.push(cur);
   // 첫 랩(피트·중간 진입)과 끝나지 않은 마지막 랩은 뺀다.
   // 끊김 직전·직후 조각도 랩 전체가 아니므로 뺀다 (끊긴 랩은 랩 번호가 바뀌기 전에 끝나거나, 중간부터 시작한다).
-  const done = laps.slice(1, -1).filter((l) => l.samples.length > 50 && !l.afterBreak && !l.brokenEnd);
-  const out = done.map(finishLap);
+  const out = [];
+  for (let r = 1; r < laps.length - 1; r++) {
+    const raw = laps[r];
+    if (raw.samples.length <= 50 || raw.afterBreak || raw.brokenEnd) continue;
+    const L = finishLap(raw);
+    official(L, raw, laps[r + 1]);
+    out.push(L);
+  }
   // 랩 길이 확인: 게임이 알려준 트랙 길이(없으면 랩들의 중앙값)와 8% 넘게 다르면 랩 전체를 돈 게 아니다
   const trackLen = samples.find((s) => s.trackLen > 100)?.trackLen;
   const refLen = trackLen || median(out.map((l) => l.dist));
@@ -44,6 +52,36 @@ export function splitLaps(samples) {
   for (const l of out) l.slow = !!medT && l.time > medT * 1.12;
   for (const l of out) l.valid = !l.why.length;
   return out;
+}
+
+// 게임 공식 랩 시간: 결승선을 지난 직후(다음 랩 처음 4초) 게임의 '지난 랩 시간'이 새 값으로 바뀐다.
+// 그 값이 우리가 잰 시간과 1.5초 안이면 공식 기록으로 쓴다. 섹터 시간도 함께.
+// 게임 베스트보다 빠른 랩인데 게임 베스트가 그 시간으로 바뀌지 않았다면 게임이 인정하지 않은 랩(트랙 리밋 등)이다.
+function official(L, raw, next) {
+  if (!next || next.afterBreak) return;
+  const lastOf = (S, k) => { for (let i = S.length - 1; i >= 0; i--) if (Number.isFinite(S[i][k])) return S[i][k]; return undefined; };
+  const before = lastOf(raw.samples, 'll');
+  const bestBefore = lastOf(raw.samples, 'bl');
+  if (before === undefined) return;
+  const N = next.samples;
+  let found = null, bestAfter;
+  for (const x of N) {
+    if (x.t - N[0].t > 4) break;
+    if (!found && Number.isFinite(x.ll) && x.ll !== before) found = x;
+    if (found && Number.isFinite(x.bl)) bestAfter = x.bl;
+  }
+  if (!found) return;
+  if (found.ll <= 0) { L.why.push('게임이 랩 시간을 기록하지 않음'); return; }
+  if (Math.abs(found.ll - L.time) > 1.5) return;
+  L.measured = L.time;
+  L.time = found.ll;
+  L.official = true;
+  if (found.ls1 > 0 && found.ls2 > found.ls1 && found.ll > found.ls2) L.sectors = [found.ls1, found.ls2 - found.ls1, found.ll - found.ls2];
+  if (Number.isFinite(bestAfter)) {
+    const beatBest = !(bestBefore > 0) || found.ll < bestBefore - 0.0005;
+    if (beatBest && Math.abs(bestAfter - found.ll) > 0.0015) L.why.push('게임이 기록을 인정하지 않음 (트랙 리밋 등)');
+    if (Math.abs(bestAfter - found.ll) <= 0.0015) L.gameBest = true; // 게임이 베스트로 인정한 랩
+  }
 }
 
 const median = (a) => {
@@ -322,10 +360,14 @@ function opponentLaps(samples) {
     if (!s.cars) continue;
     for (const o of s.cars) {
       if (!byId.has(o.id)) byId.set(o.id, { id: o.id, name: o.n || `차량 ${o.id}`, cls: o.c || '', samples: [] });
-      byId.get(o.id).samples.push({ t: s.t, lap: o.lap, x: o.x, z: o.z, v: o.v, pit: o.pit, off: o.off });
+      byId.get(o.id).samples.push({ t: s.t, lap: o.lap, x: o.x, z: o.z, v: o.v, pit: o.pit, off: o.off, ll: o.last, bl: o.best });
     }
   }
-  return [...byId.values()].map((o) => ({ ...o, laps: splitLaps(o.samples) })).filter((o) => o.laps.length);
+  return [...byId.values()].map((o) => {
+    // 게임 공식 베스트 (기록 전에 세운 것일 수도 있다)
+    const bests = o.samples.map((x) => x.bl).filter((x) => x > 0);
+    return { ...o, officialBest: bests.length ? Math.min(...bests) : null, laps: splitLaps(o.samples) };
+  });
 }
 
 // ---------- 세션 분석 ----------
@@ -353,9 +395,12 @@ export function analyzeSession(all) {
         + (incidents.length ? ` 대신 사고·실수 ${incidents.length}건은 분석했습니다.` : ''),
     };
   }
-  // 기준(베스트) 랩: 트랙 이탈 없고 평소보다 크게 느리지 않은 랩 중 가장 빠른 것
-  const cand = valid.filter((l) => !l.hasOff && !l.slow);
+  // 기준(베스트) 랩: 게임 공식 기록이 있으면 게임이 인정한 랩 중 가장 빠른 것 (게임 타이밍 화면의 베스트와 같다).
+  // 공식 기록이 없는 예전 기록이면 트랙 이탈 없고 평소보다 크게 느리지 않은 랩 중 가장 빠른 것.
+  const cand = valid.filter((l) => (l.official ? !l.slow : !l.hasOff && !l.slow));
   const best = (cand.length ? cand : valid).reduce((a, b) => (b.time < a.time ? b : a));
+  const info = [...samples].reverse().find((x) => x.info)?.info || null;
+  const myCls = info?.cls || '';
   const ref = resampleLap(best);
   // 모든 랩을 기준 랩과 같은 칸 수로 맞춘다 → 같은 인덱스 = 같은 트랙 위치
   for (const l of laps) l.R = l === best ? ref : resampleLap(l, ref.n);
@@ -425,26 +470,90 @@ export function analyzeSession(all) {
       l.bad[k] = true;
     }
   }
-  // 이론상 베스트: 코너 구간마다 트래픽·사고 없이 가장 빠른 랩의 시간을 더한다
+  // 코너 시간이 같은 코너의 다른 랩들보다 15% 넘게 짧으면 데이터가 잘못됐거나(위치 튐) 코스를 가로지른 것 → 기준·평균에서 뺀다
+  corners.forEach((c, k) => {
+    const med = median(valid.map((l) => l.corners[k].time));
+    for (const l of laps) if (med && l.corners[k].time < med * 0.85) { l.bad[k] = true; l.suspect = true; }
+  });
   const clean = (k) => valid.filter((l) => !l.traffic[k] && !l.bad[k]);
-  const segTimes = corners.map((c, k) => Math.min(...(clean(k).length ? clean(k) : valid).map((l) => l.corners[k].time)));
-  const refSeg = corners.map((c, k) => best.corners[k].time);
-  const theoretical = best.time - refSeg.reduce((a, b) => a + b, 0) + segTimes.reduce((a, b) => a + b, 0);
-  // 코너별 일관성: 트래픽 없는 유효 랩들의 코너 시간 표준편차
+  // 이론상 베스트: 게임 섹터 기록이 있으면 섹터별 최고의 합 (게임 타이밍 화면과 같은 방식), 없으면 코너 구간별 최고의 합
+  const withSec = valid.filter((l) => l.sectors);
+  let theoretical, theoryKind;
+  if (withSec.length) {
+    theoretical = [0, 1, 2].reduce((sum, i) => sum + Math.min(...withSec.map((l) => l.sectors[i])), 0);
+    theoryKind = '섹터별 최고 기록의 합';
+  } else {
+    const segTimes = corners.map((c, k) => Math.min(...(clean(k).length ? clean(k) : [best]).map((l) => l.corners[k].time)));
+    theoretical = best.time - corners.reduce((a, c, k) => a + best.corners[k].time, 0) + segTimes.reduce((a, b) => a + b, 0);
+    theoryKind = '코너 구간별 최고 기록의 합';
+  }
+  theoretical = Math.min(theoretical, best.time);
+  // 코너별 일관성: 트래픽·사고 없는 유효 랩들의 코너 시간 표준편차
   const spread = corners.map((c, k) => std((clean(k).length ? clean(k) : valid).map((l) => l.corners[k].time)));
   // 상대 차: 같은 기준 라인 위로 맞춰 코너별 속도·라인 지표
+  const A0x = { ref, corners };
   const opponents = opponentLaps(samples).map((o) => {
-    for (const l of o.laps) {
-      l.R = resampleLap(l, ref.n);
-      l.speed = corners.map((c) => speedMetrics(l.R, c));
-      l.offset = lineOffsets(l.R, ref);
-      l.line = corners.map((c) => lineMetrics(l.offset, c, c.turn, null));
-    }
-    const ok = o.laps.filter((l) => l.valid);
+    for (const l of o.laps) prepLap(A0x, l, false);
+    const ok = o.laps.filter((l) => l.valid && !l.slow);
     o.best = ok.length ? ok.reduce((a, b) => (b.time < a.time ? b : a)) : null;
+    // 게임 공식 베스트가 기록된 랩보다 확실히 빠르면, 그 랩은 기록을 켜기 전에 달린 것이라 주행 데이터가 없다
+    o.bestTime = o.officialBest && (!o.best || o.officialBest < o.best.time - 0.05) ? o.officialBest : o.best?.time ?? null;
+    o.traced = !!o.best && Math.abs(o.bestTime - o.best.time) < 0.05;
     return o;
-  }).filter((o) => o.best).sort((a, b) => a.best.time - b.best.time);
-  return { laps, best, ref, corners, theoretical, spread, segTimes, opponents, hasLat, incidents, cal, samples, mixed: count.size > 1 ? count.size : 0 };
+  }).filter((o) => o.bestTime).sort((a, b) => a.bestTime - b.bestTime);
+  // 섹터 경계 (내 기록의 섹터 번호가 바뀌는 곳 → 기준 칸)
+  const sectorIdx = [];
+  if (best.samples.some((x) => Number.isFinite(x.sec))) {
+    const f = fracIdx(best);
+    for (const target of [2, 0]) {
+      const j = best.samples.findIndex((x, i) => i > 0 && x.sec === target && best.samples[i - 1].sec !== target);
+      if (j > 0) sectorIdx.push(f[j]);
+    }
+  }
+  const A = { laps, best, ref, corners, theoretical, theoryKind, spread, opponents, hasLat, incidents, cal, samples, info, myCls, sectorIdx, mixed: count.size > 1 ? count.size : 0 };
+  A.refs = referenceCandidates(A);
+  return A;
+}
+
+// 다른 랩(상대 차·다른 기록 파일)을 이 세션의 기준 축에 맞춘다
+export function prepLap(A, l, pedals) {
+  l.R = resampleLap(l, A.ref.n);
+  if (pedals) l.corners = A.corners.map((c) => cornerMetrics(l.R, c));
+  l.speed = A.corners.map((c) => speedMetrics(l.R, c));
+  l.offset = lineOffsets(l.R, A.ref);
+  l.line = A.corners.map((c) => lineMetrics(l.offset, c, c.turn, null));
+}
+
+// 기준 랩 후보: 이 세션에서 누가 달렸든 가장 빠른 랩이 기본.
+// 클래스가 다르면 비교가 무의미하므로 같은 클래스만 기본 후보로 삼는다 (내 클래스를 모르는 예전 기록이면 나보다 7% 넘게 빠른 차는 다른 클래스로 본다).
+export function referenceCandidates(A, extra = []) {
+  const me = { key: 'me', name: `내 베스트 (랩 ${A.best.lap})`, who: '나', cls: A.myCls, time: A.best.time, lap: A.best, pedals: true, mine: true, traced: true };
+  const opp = A.opponents.map((o) => ({ key: 'o' + o.id, name: o.name, who: o.name, cls: o.cls, time: o.bestTime, lap: o.traced ? o.best : null, pedals: false, traced: o.traced }));
+  const all = [me, ...opp, ...extra].sort((a, b) => a.time - b.time);
+  const sameClass = (c) => (A.myCls ? !c.cls || c.cls === A.myCls : c.time >= A.best.time * 0.93);
+  for (const c of all) c.sameClass = c.mine || sameClass(c);
+  return all;
+}
+
+// 기본 기준: 같은 클래스에서 주행 데이터가 있는 가장 빠른 랩
+export function defaultReference(A) {
+  return A.refs.find((c) => c.sameClass && c.lap) || A.refs.find((c) => c.mine);
+}
+
+// 다른 기록 파일에서 기준 랩 후보를 가져온다 (같은 트랙이면 게임 좌표가 같으므로 그대로 겹친다)
+export function externalCandidates(A, samples, label) {
+  const B = analyzeSession(samples);
+  if (B.error) return { error: B.error };
+  if ((B.best.samples[0].track || '') !== (A.best.samples[0].track || '')) return { error: `다른 트랙의 기록입니다 (${B.best.samples[0].track || '?'})` };
+  const out = [];
+  const mine = B.best;
+  prepLap(A, mine, true);
+  out.push({ key: 'f:' + label + ':me', name: `${label} · ${mine.samples[0].car || '플레이어'}`, who: label, cls: B.myCls, time: mine.time, lap: mine, pedals: true, traced: true, file: true });
+  for (const o of B.opponents) if (o.traced) {
+    prepLap(A, o.best, false);
+    out.push({ key: 'f:' + label + ':' + o.id, name: `${label} · ${o.name}`, who: o.name, cls: o.cls, time: o.bestTime, lap: o.best, pedals: false, traced: true, file: true });
+  }
+  return { list: out };
 }
 
 function std(a) {
@@ -502,48 +611,57 @@ export function speedReasons(m, r) {
   return out;
 }
 
-// 비교 랩의 코너마다 기준과 비교해 손해가 큰 순서로 정리.
-// target 없음: 코너마다 트래픽 없이 가장 빨리 지난 내 랩이 기준 (베스트 랩이 모든 코너에서 최고는 아니므로)
-// target { lap }: 상대 차의 랩이 기준 (속도·라인만 비교)
-export function coachLap(A, lap, target = null) {
+// 원인별 고칠 점 (한 줄)
+export const FIX = {
+  '브레이크 일찍': '더 깊이 들어가서 제동', '브레이크 늦음': '조금 일찍 제동해 코너 속도 살리기', '초기 제동 약함': '처음에 세게, 점점 풀기',
+  '브레이크 급하게 놓음': '조향 감으면서 서서히 풀기', '가속 늦음': '회전 끝나면 바로 가속', '코스팅': '제동에서 바로 가속으로',
+  '스로틀 망설임': '처음부터 조금 덜, 점점 더', '조향 수정 많음': '진입 속도 조금 낮춰 안정', '코너 속도 낮음': '코너 속도 더 가져가기',
+  '에이펙스 놓침': '꼭짓점 안쪽에 붙이기', '진입 폭 안 씀': '진입 전 바깥쪽 쓰기', '탈출 폭 안 씀': '탈출 때 바깥까지 흘려 보내기',
+  '일찍 꺾음': '턴인 조금 늦게', '감속 일찍': '더 깊이 들어가서 감속', '감속 늦음': '감속 조금 일찍', '탈출 느림': '탈출 속도 우선',
+};
+
+// 비교 랩의 코너마다 기준 랩 하나와 비교해 손해가 큰 순서로 정리.
+// ref: referenceCandidates의 항목. 페달 기록이 있으면(내 랩·기록 파일의 플레이어) 페달까지, 없으면(다른 차) 속도·라인만 비교.
+export function coachLap(A, lap, ref) {
   const tips = [];
   const skipped = [];
-  const valid = A.laps.filter((l) => l.valid);
+  if (!ref?.lap || ref.lap === lap) return { tips, skipped };
+  const R = ref.lap;
   A.corners.forEach((c, k) => {
     if (lap.traffic?.[k]) { skipped.push(c.id); return; }
     if (lap.bad?.[k]) return; // 사고 분석에서 따로 설명한다
-    let ref, loss, reasons, refName;
-    if (target) {
-      ref = target.lap;
-      loss = lap.speed[k].time - ref.speed[k].time;
-      reasons = [...speedReasons(lap.speed[k], ref.speed[k]), ...lineReasons(lap.line[k], ref.line[k])];
-      refName = target.name;
+    let loss, reasons;
+    if (ref.pedals && R.corners) {
+      loss = lap.corners[k].time - R.corners[k].time;
+      reasons = [...cornerReasons(lap.corners[k], R.corners[k]).filter((x) => x.w > 0), ...lineReasons(lap.line[k], R.line[k])];
     } else {
-      const pool = valid.filter((l) => !l.traffic[k] && !l.bad[k]);
-      if (!pool.length) return;
-      ref = pool.reduce((a, b) => (b.corners[k].time < a.corners[k].time ? b : a));
-      if (ref === lap) return;
-      loss = lap.corners[k].time - ref.corners[k].time;
-      reasons = [...cornerReasons(lap.corners[k], ref.corners[k]).filter((x) => x.w > 0), ...lineReasons(lap.line[k], ref.line[k])];
-      refName = `랩 ${ref.lap}`;
+      loss = lap.speed[k].time - R.speed[k].time;
+      reasons = [...speedReasons(lap.speed[k], R.speed[k]), ...lineReasons(lap.line[k], R.line[k])];
     }
     if (loss < 0.04) return;
     reasons.sort((a, b) => b.w - a.w);
     if (!reasons.length) reasons.push({ text: '페달·속도·라인에서 뚜렷한 차이는 없습니다. 조금씩 고르게 느립니다.', short: '' });
-    tips.push({ corner: c.id, loss, reasons: reasons.slice(0, 2).map((x) => x.text), short: reasons[0].short, refLap: ref.lap, refName });
+    tips.push({ corner: c.id, k, loss, reasons: reasons.slice(0, 2).map((x) => x.text), short: reasons[0].short, fix: FIX[reasons[0].short] || '', shorts: reasons.slice(0, 2).map((x) => x.short).filter(Boolean), refName: ref.name });
   });
   return { tips: tips.sort((a, b) => b.loss - a.loss), skipped };
 }
 
-// 세션 전체 요약: 코너별 평균 손해와 반복되는 실수
-export function sessionSummary(A) {
-  const valid = A.laps.filter((l) => l.valid);
-  return A.corners.map((c, k) => {
-    const fastest = A.segTimes[k];
-    const pool = valid.filter((l) => !l.traffic[k] && !l.bad[k]);
-    const use = pool.length ? pool : valid.filter((l) => !l.bad[k]);
-    if (!use.length) return { corner: c.id, avgLoss: 0, spread: 0, minSpeed: c.minSpeed };
-    const avgLoss = use.reduce((s, l) => s + (l.corners[k].time - fastest), 0) / use.length;
-    return { corner: c.id, avgLoss, spread: A.spread[k], minSpeed: c.minSpeed };
-  }).sort((a, b) => b.avgLoss - a.avgLoss);
+// 세션 전체 요약: 코너마다 내 깨끗한 랩들이 기준 랩보다 평균 몇 초 느린지, 가장 자주 나온 원인
+export function sessionSummary(A, ref) {
+  const valid = A.laps.filter((l) => l.valid && l !== ref?.lap);
+  const out = A.corners.map((c, k) => {
+    const use = valid.filter((l) => !l.traffic[k] && !l.bad[k]);
+    if (!use.length || !ref?.lap) return { corner: c.id, k, avgLoss: 0, spread: A.spread[k], why: '' };
+    const R = ref.lap;
+    const t = (l) => (ref.pedals && R.corners ? l.corners[k].time - R.corners[k].time : l.speed[k].time - R.speed[k].time);
+    const avgLoss = use.reduce((sum, l) => sum + t(l), 0) / use.length;
+    const count = new Map();
+    for (const l of use) {
+      const tip = coachLap(A, l, ref).tips.find((x) => x.k === k);
+      if (tip?.short) count.set(tip.short, (count.get(tip.short) || 0) + 1);
+    }
+    const top = [...count.entries()].sort((a, b) => b[1] - a[1])[0];
+    return { corner: c.id, k, avgLoss, spread: A.spread[k], why: top ? top[0] : '', whyCount: top ? top[1] : 0, laps: use.length };
+  });
+  return out.sort((a, b) => b.avgLoss - a.avgLoss);
 }
