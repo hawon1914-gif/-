@@ -101,7 +101,7 @@ test('스핀: 버리지 않고 직전 조작에서 원인을 찾는다 (스로�
   const e = l6.incidents.find((x) => x.kind === 'spin');
   assert.ok(e, JSON.stringify(l6.incidents.map((x) => x.name)));
   const txt = e.causes.join(' ');
-  assert.ok(/스로틀을 \d+%→\d+%로 빠르게/.test(txt), txt);
+  assert.ok(/스로틀을 \d+%→\d+%로 열었/.test(txt), txt);
   assert.ok(/휠스핀/.test(txt), txt);
   // 사고 코너는 평균 계산에서 빠지고, 나머지 코너는 그대로 쓰인다
   assert.ok(l6.bad[e.cornerIdx]);

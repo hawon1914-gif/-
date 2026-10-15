@@ -42,10 +42,13 @@ class StructSizes(unittest.TestCase):
             t.mID, t.mLapNumber, t.mElapsedTime = vid, 3, 12.5
             t.mLocalVel.z = 50.0 if vid == 7 else 40.0
             t.mUnfilteredThrottle = 0.8
+            for w in t.mWheels:
+                w.mTireInnerLayerTemperature[:] = [350.0, 350.0, 350.0]
             t.mTrackName[:4] = list(b'Spa\0')
         mm = io.BytesIO(bytes(o))
         r = B.GameReader(B.LMUSource(mm))
         samples = [r.read() for _ in range(3)]
+        self.assertAlmostEqual(samples[0]['tire'][0], 76.9, places=1)
         s = samples[0]
         self.assertAlmostEqual(s['v'], 50.0)
         self.assertEqual(s['lat'], 1.5)

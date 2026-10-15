@@ -329,6 +329,10 @@ class GameReader:
         if t is None or ps is None:
             self.note = '내 차를 찾지 못함 (트랙에 나가 있어야 합니다)'
             return None
+        # 게임이 차를 옮기는 순간(차고 복귀 등)에는 바퀴 데이터까지 0인 빈 값이 올 때가 있다 → 버린다
+        if all(w.mTireInnerLayerTemperature[0] == 0 for w in t.mWheels):
+            self.note = '빈 데이터(차를 옮기는 중)'
+            return None
         self.note = ''
         info = snap['info']
         self.count += 1

@@ -1,4 +1,4 @@
-import { calibrate, detectIncidents } from './incidents.js';
+import { calibrate, findIncidents, motion } from './incidents.js';
 // 주행 코칭 분석: 텔레메트리 샘플 → 랩 분리 → 1 m 간격 재샘플 → 코너 검출 → 코너별 지표 → 코칭 문장.
 // 입력 샘플 형식 (브리지·기록 파일·데모 공통):
 //   { t: 초, lap: 랩 번호, x, z: 평면 위치(m), v: 속도(m/s), thr, brk: 0~1, steer: -1~1, gear, rpm, off?: 트랙 이탈 여부,
@@ -335,13 +335,23 @@ export function analyzeSession(all) {
   const count = new Map();
   for (const x of all) count.set(key(x), (count.get(key(x)) || 0) + 1);
   const main = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-  const samples = count.size > 1 ? all.filter((x) => key(x) === main) : all;
+  // 게임이 차를 옮기는 순간(차고 복귀 등)에 비어 있는 데이터가 한두 개 섞인다: 타이어 온도가 절대영도(-273°C)인 샘플
+  const samples = (count.size > 1 ? all.filter((x) => key(x) === main) : all).filter((x) => !(x.tire && x.tire.every((v) => v < -200)));
   markTraffic(samples);
+  motion(samples);
+  const cal = calibrate(samples);
   const laps = splitLaps(samples);
   const valid = laps.filter((l) => l.valid);
   if (!valid.length) {
+    // 비교할 랩이 없어도 사고·실수는 분석한다 (절대 기준)
+    const incidents = findIncidents(samples, cal, null);
     const why = [...new Set(laps.flatMap((l) => l.why))].join(', ');
-    return { laps, error: laps.length ? `분석할 수 있는 랩이 없습니다. 완주 랩 ${laps.length}개가 모두 무효입니다 (${why}).` : '완주한 랩이 없습니다. 최소 3바퀴(아웃랩, 측정 랩, 다음 랩 시작)가 필요합니다. 차고로 돌아가거나 리셋하면 그 랩은 끊긴 것으로 봅니다.' };
+    const driven = samples.filter((x) => x.v > 1 && !x.pit).length;
+    return {
+      laps, incidents, samples, cal, noRef: true,
+      error: (laps.length ? `기준으로 쓸 수 있는 완주 랩이 없습니다 (${why}).` : `완주한 랩이 없습니다 (주행 ${(driven / 60).toFixed(0)}초 분량). 랩 비교는 한 바퀴 이상 끊김 없이 달려야 하고, 차고로 돌아가거나 리셋하면 그 랩은 끊깁니다.`)
+        + (incidents.length ? ` 대신 사고·실수 ${incidents.length}건은 분석했습니다.` : ''),
+    };
   }
   // 기준(베스트) 랩: 트랙 이탈 없고 평소보다 크게 느리지 않은 랩 중 가장 빠른 것
   const cand = valid.filter((l) => !l.hasOff && !l.slow);
@@ -367,7 +377,7 @@ export function analyzeSession(all) {
   }
   // 안쪽 가장자리까지 거리 = 가장자리 거리 − 안쪽 방향으로의 가로 위치
   const insideEdge = (R) => (hasLat ? corners.reduce((arr, c) => {
-    for (let i = c.from; i <= Math.min(R.n - 1, c.to); i++) arr[i] = R.edge[i] - c.turn * latSign * R.lat[i];
+    for (let i = c.from; i <= Math.min(R.n - 1, c.to); i++) arr[i] = Math.abs(R.edge[i]) - c.turn * latSign * R.lat[i]; // 게임의 가장자리 값은 차가 있는 쪽 부호를 따른다
     return arr;
   }, new Float32Array(R.n).fill(NaN)) : null);
   for (const l of laps) {
@@ -381,18 +391,38 @@ export function analyzeSession(all) {
     l.delta = Float32Array.from(l.R.t, (t, i) => t - ref.t[i]);
   }
   // 사고 분석: 스핀·이탈·충돌·큰 감속. 그 코너(와 회복까지 걸린 코너)는 평균·기준 계산에서만 뺀다.
-  const partial = { ref, corners, best };
-  const cal = calibrate(partial, samples);
-  const incidents = [];
+  // 샘플 → 기준 랩 칸. 완주 랩은 그 랩 거리 비율로(재샘플과 같게), 랩 조각은 게임의 랩 거리로.
+  const idxOf = new Map(samples.map((x, i) => [x, i]));
+  const refIdxArr = new Int32Array(samples.length).fill(-1);
+  const lapOf = new Array(samples.length);
+  const fracIdx = (L) => {
+    const S = L.samples;
+    let d = 0;
+    const out = [0];
+    for (let i = 1; i < S.length; i++) { d += Math.hypot(S[i].x - S[i - 1].x, S[i].z - S[i - 1].z); out.push(d); }
+    return out.map((x) => Math.min(ref.n - 1, Math.floor((x / (d || 1)) * ref.n)));
+  };
+  const trackLen = samples.find((x) => x.trackLen > 100)?.trackLen;
+  if (trackLen) samples.forEach((x, i) => { if (Number.isFinite(x.lapDist) && !x.pit) refIdxArr[i] = Math.min(ref.n - 1, Math.max(0, Math.floor((x.lapDist / trackLen) * ref.n))); });
   for (const l of laps) {
-    l.bad = corners.map(() => false);
-    l.incidents = detectIncidents(partial, l, cal);
-    for (const e of l.incidents) {
-      incidents.push(e);
-      for (let k = e.cornerIdx; k < corners.length; k++) {
-        if (corners[k].from > e.endIdx) break;
-        l.bad[k] = true;
-      }
+    const f = fracIdx(l);
+    l.samples.forEach((x, j) => { const i = idxOf.get(x); refIdxArr[i] = f[j]; lapOf[i] = l; });
+  }
+  const bestIdx = fracIdx(best);
+  const A0 = { ref, corners, best };
+  const incidents = findIncidents(samples, cal, {
+    A: A0, bestIdx, refIdx: (i) => refIdxArr[i],
+    offsetAt: (i) => (lapOf[i]?.offset ? lapOf[i].offset[refIdxArr[i]] : NaN),
+  });
+  for (const l of laps) { l.bad = corners.map(() => false); l.incidents = []; }
+  for (const e of incidents) {
+    const l = lapOf[e.sample];
+    if (!l) continue;
+    l.incidents.push(e);
+    if (e.cornerIdx < 0) continue;
+    for (let k = e.cornerIdx; k < corners.length; k++) {
+      if (k > e.cornerIdx && corners[k].from > (e.endIdx ?? e.refIdx)) break;
+      l.bad[k] = true;
     }
   }
   // 이론상 베스트: 코너 구간마다 트래픽·사고 없이 가장 빠른 랩의 시간을 더한다
@@ -414,7 +444,7 @@ export function analyzeSession(all) {
     o.best = ok.length ? ok.reduce((a, b) => (b.time < a.time ? b : a)) : null;
     return o;
   }).filter((o) => o.best).sort((a, b) => a.best.time - b.best.time);
-  return { laps, best, ref, corners, theoretical, spread, segTimes, opponents, hasLat, incidents, cal, mixed: count.size > 1 ? count.size : 0 };
+  return { laps, best, ref, corners, theoretical, spread, segTimes, opponents, hasLat, incidents, cal, samples, mixed: count.size > 1 ? count.size : 0 };
 }
 
 function std(a) {

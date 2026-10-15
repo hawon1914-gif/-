@@ -20,18 +20,21 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     delta: new LineChart($('#co-c-delta'), { xLabel: 'm', yLabel: '초', height: 150 }),
     line: new LineChart($('#co-c-line'), { xLabel: 'm', yLabel: 'm', height: 150 }),
   };
+  const incChart = new LineChart($('#co-c-inc'), { xLabel: '초', yLabel: 'km/h · %', height: 220 });
   const zoom = $('#co-zoom');
   let target = ''; // '' = 코너별 내 최고, 'o:<id>' = 상대 차 베스트 랩
   let zoomCorner = 0;
   let showAllInc = false;
   let focusIdx = -1; // 사고 지점 (차트 표시)
-  const incHtml = (e, withLap) => `<div class="tip-head"><b>${withLap ? `랩 ${e.lap} · ` : ''}${e.corner}번 코너 ${esc(e.name)}</b>
-    <span class="loss">${e.loss > 0.05 ? `−${e.loss.toFixed(2)}초` : '시간 손해 없음'}</span>
-    <span class="meta">${e.phase} · ${e.speed.toFixed(0)} km/h${e.peakSlip > 5 ? ` · 최대 미끄러짐 ${e.peakSlip.toFixed(0)}°` : ''}</span></div>
-    ${e.kind === 'off' && e.loss <= 0.05 ? '<p>시간은 잃지 않았지만 트랙 밖으로 나갔습니다. 대회라면 트랙 리밋 경고·무효 랩 대상입니다.</p>' : ''}
+  const incHtml = (e, withLap, num) => `<div class="tip-head"><b>${num ? `${num}. ` : ''}${withLap ? `랩 ${e.lap} · ` : ''}${e.corner ? `${e.corner}번 코너 ` : Number.isFinite(e.lapDist) ? `랩 거리 ${e.lapDist.toFixed(0)} m · ` : ''}${esc(e.name)}</b>
+    <span class="loss">${e.loss === null ? '' : e.loss > 0.05 ? `−${e.loss.toFixed(2)}초` : '시간 손해 없음'}</span>
+    <span class="meta">${e.phase ? e.phase + ' · ' : ''}${e.speed.toFixed(0)} km/h${e.peakSlip > 5 ? ` · 최대 미끄러짐 ${e.peakSlip.toFixed(0)}°` : ''}${e.kind === 'spin' && !e.peakSlip && e.turned > 20 ? ` · 진행 방향 ${e.turned.toFixed(0)}° 회전` : ''}${e.over > 0.5 ? ` · 트랙 가장자리에서 ${e.over.toFixed(1)} m 밖` : ''}${e.recovery > 3 ? ` · 복귀까지 ${e.recovery.toFixed(0)}초` : ''}</span></div>
+    ${e.kind === 'off' && e.loss !== null && e.loss <= 0.05 ? '<p>시간은 잃지 않았지만 트랙 밖으로 나갔습니다. 대회라면 트랙 리밋 경고·무효 랩 대상입니다.</p>' : ''}
     ${e.causes.map((c) => `<p>${esc(c)}</p>`).join('')}${e.evidence ? `<p class="meta">${esc(e.evidence)}</p>` : ''}`;
   let samples = [];
   let A = null; // 분석 결과
+  let N = null; // 완주 랩이 없어 사고 분석만 된 결과
+  let selInc = null; // 고른 사고
   let lapIdx = -1; // 비교 랩
   let sessionName = '';
   let visible = false;
@@ -71,8 +74,10 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
 
   // ---------- 분석 ----------
   function analyze(keepLap = false) {
+    if (!keepLap) selInc = null;
     const res = analyzeSession(samples);
-    if (res.error) { status(res.error); A = null; render(); return; }
+    N = res.noRef ? res : null;
+    if (res.error) { status(`${sessionName} · ${res.error}`); A = null; render(); return; }
     A = res;
     if (!keepLap || lapIdx < 0 || lapIdx >= A.laps.length) {
       // 기본 비교 랩: 베스트가 아닌 유효 랩 중 가장 최근
@@ -210,10 +215,11 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     const h = Math.round(Math.min(420, Math.max(260, w * 0.62)));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     map.width = w * dpr; map.height = h * dpr; map.style.height = h + 'px';
-    if (!A) { mapXf = null; return; }
-    const R = A.ref;
+    if (!A && !N) { mapXf = null; return; }
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (let i = 0; i < R.n; i++) { minX = Math.min(minX, R.x[i]); maxX = Math.max(maxX, R.x[i]); minZ = Math.min(minZ, R.z[i]); maxZ = Math.max(maxZ, R.z[i]); }
+    const grow = (x, z) => { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); };
+    if (A) for (let i = 0; i < A.ref.n; i++) grow(A.ref.x[i], A.ref.z[i]);
+    else for (const x of N.samples) if (!x.pit && x.v > 1) grow(x.x, x.z);
     const pad = 26;
     const sc = Math.min((w - 2 * pad) / (maxX - minX || 1), (h - 2 * pad) / (maxZ - minZ || 1));
     const ox = (w - (maxX - minX) * sc) / 2;
@@ -227,7 +233,8 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     const dpr = map.width / (map.clientWidth || 1);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, map.width, map.height);
-    if (!A || !mapXf) return;
+    if (!mapXf) return;
+    if (!A) { drawPathMap(ctx); return; }
     const R = A.ref;
     const lap = A.laps[lapIdx];
     ctx.lineCap = 'round';
@@ -279,6 +286,75 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
   }
 
   // 고스트 재생: 베스트(파랑)와 비교 랩(주황)을 같은 시간축으로 움직인다
+  // 완주 랩이 없을 때: 달린 경로와 사고 지점
+  function drawPathMap(ctx) {
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = css('--accent'); ctx.lineWidth = 3;
+    let prev = null;
+    ctx.beginPath();
+    for (const x of N.samples) {
+      if (x.pit || x.v < 1) { prev = null; continue; }
+      const [px, py] = mapXf(x.x, x.z);
+      if (!prev || x._seg !== prev._seg) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      prev = x;
+    }
+    ctx.stroke();
+    drawIncidentMarks(ctx, N.incidents);
+  }
+  function drawIncidentMarks(ctx, list) {
+    ctx.font = `600 11px ${css('--font-data')}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    list.forEach((e, n) => {
+      const [px, py] = mapXf(e.x, e.z);
+      ctx.fillStyle = e === selInc ? css('--drag') : css('--panel');
+      ctx.strokeStyle = css('--drag'); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = e === selInc ? css('--panel') : css('--drag');
+      ctx.fillText(String(n + 1), px, py + 0.5);
+    });
+  }
+
+  // 사고 목록 (완주 랩이 있든 없든)
+  function renderIncidents(list, withLap) {
+    const order = withLap ? list.slice().sort((a, b) => (b.loss ?? 0) - (a.loss ?? 0)) : list;
+    $('#co-inc-box').hidden = !order.length;
+    $('#co-incidents').innerHTML = order.map((e, n) => `<li data-n="${n}" class="${e === selInc ? 'sel' : ''}" ${n >= 6 && !showAllInc ? 'hidden' : ''}>${incHtml(e, withLap, withLap ? null : n + 1)}</li>`).join('')
+      + (order.length > 6 ? `<button type="button" id="co-inc-more">${showAllInc ? '접기' : `${order.length - 6}건 더 보기`}</button>` : '');
+    $('#co-inc-more')?.addEventListener('click', () => { showAllInc = !showAllInc; render(); });
+    $('#co-incidents').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => {
+      const e = order[+li.dataset.n];
+      selInc = e;
+      if (A) {
+        const i = A.laps.findIndex((l) => l.incidents.includes(e));
+        if (i >= 0) lapIdx = i;
+        if (e.cornerIdx >= 0) zoomCorner = e.cornerIdx;
+        focusIdx = e.refIdx;
+      }
+      stopReplay(); render();
+      $('#co-incfig').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }));
+    drawIncChart();
+  }
+
+  // 사고 앞뒤 기록: 속도·스로틀·브레이크·조향을 시간축으로
+  function drawIncChart() {
+    const src = A ? A.samples : N?.samples;
+    $('#co-incfig').hidden = !selInc || !src;
+    if (!selInc || !src) return;
+    const e = selInc;
+    const t0 = src[e.sample].t;
+    const W = src.filter((x) => x.t >= t0 - 6 && x.t <= t0 + 6 && x._seg === src[e.sample]._seg);
+    const xs = W.map((x) => +(x.t - t0).toFixed(2));
+    $('#co-incfig-name').textContent = `· ${e.name}${e.corner ? ` · ${e.corner}번 코너` : ''}`;
+    incChart.set([
+      { name: '속도 km/h', color: '--front', x: xs, y: W.map((x) => x.v * 3.6) },
+      { name: '스로틀 %', color: '--ok', x: xs, y: W.map((x) => (x.thr ?? NaN) * 100) },
+      { name: '브레이크 %', color: '--drag', x: xs, y: W.map((x) => (x.brk ?? NaN) * 100) },
+      { name: '조향 %', color: '--c2', x: xs, y: W.map((x) => (x.steer ?? NaN) * 100) },
+      ...(W.some((x) => Number.isFinite(x.slip) && x.slip !== 0) ? [{ name: '미끄러짐 °', color: '--warn', x: xs, y: W.map((x) => x.slip) }] : []),
+    ], { markers: [{ x: 0, label: '시작', color: '--drag' }] });
+  }
+
   // 고스트 재생: 고른 랩(또는 세션 전체를 이어서)과 고스트 랩을 같은 시간축으로 움직인다.
   // 고스트는 랩마다 처음부터 다시 출발한다.
   let replay = null;
@@ -337,12 +413,15 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
   function render() {
     setupMap();
     drawMap();
-    const has = !!A;
+    const has = !!A || !!(N && N.incidents.length);
     $('#co-results').hidden = !has;
-    if (!has) return;
+    $('#co-lapside').hidden = !A;
+    $('#co-lapview').hidden = !A;
+    root.querySelector('.replay').hidden = !A;
+    if (!A) { $('#co-opp-box').hidden = true; if (N) renderIncidents(N.incidents, false); else $('#co-incfig').hidden = true; return; }
     const lap = A.laps[lapIdx];
     const opp = targetOpp();
-    const incTag = (l) => l.incidents.map((e) => `${e.name.replace(' (추정)', '')} ${e.corner}번`).join(', ');
+    const incTag = (l) => l.incidents.map((e) => `${e.name.replace(/ \(.*\)/, '')}${e.corner ? ` ${e.corner}번` : ''}`).join(', ');
     const tag = (l) => {
       const ks = A.corners.filter((c, k) => l.traffic[k]).map((c) => c.id);
       return ks.length ? `트래픽 ${ks.join(',')}번` : '';
@@ -350,21 +429,7 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     // 랩 목록
     $('#co-laps').innerHTML = A.laps.map((l, i) => `<tr class="${i === lapIdx ? 'sel' : ''}" data-i="${i}">
       <td>랩 ${l.lap}</td><td>${fmt(l.time)}</td><td title="${esc(l.why.join(', '))}">${l === A.best ? '베스트' : l.valid ? sign(l.time - A.best.time, 3) : '기준 제외 · ' + esc(l.why[0] || '')}</td><td class="traffic">${[incTag(l), tag(l)].filter(Boolean).join(' · ')}</td></tr>`).join('');
-    // 사고·실수: 세션 전체, 손해 큰 순
-    const incs = A.incidents.slice().sort((a, b) => b.loss - a.loss);
-    $('#co-inc-box').hidden = !incs.length;
-    // 많으면 손해 큰 6건만 펼치고 나머지는 접어 둔다
-    $('#co-incidents').innerHTML = incs.map((e, n) => `<li data-n="${n}" class="${A.laps[lapIdx]?.lap === e.lap && zoomCorner === e.cornerIdx ? 'sel' : ''}" ${n >= 6 && !showAllInc ? 'hidden' : ''}>${incHtml(e, true)}</li>`).join('')
-      + (incs.length > 6 ? `<button type="button" id="co-inc-more">${showAllInc ? '접기' : `${incs.length - 6}건 더 보기`}</button>` : '');
-    $('#co-inc-more')?.addEventListener('click', () => { showAllInc = !showAllInc; render(); });
-    $('#co-incidents').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => {
-      const e = incs[+li.dataset.n];
-      lapIdx = A.laps.findIndex((l) => l.lap === e.lap);
-      zoomCorner = e.cornerIdx;
-      focusIdx = e.refIdx;
-      stopReplay(); render();
-      $('#co-zoom').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }));
+    renderIncidents(A.incidents, true);
     // 같이 달린 차
     $('#co-opp-box').hidden = !A.opponents.length;
     $('#co-opps').innerHTML = A.opponents.map((o) => `<tr class="${target === 'o:' + o.id ? 'sel' : ''}" data-id="${o.id}">
