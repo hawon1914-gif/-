@@ -234,11 +234,14 @@ class LMUSource:
         tel = o.telemetry
         n_tel = min(tel.mActiveVehicles, LMU_MAX_VEHICLES)
         n_sco = min(o.scoring.mScoringInfo.mNumVehicles, LMU_MAX_VEHICLES)
-        player_tel = tel.mVehicles[tel.mPlayerVehicleIdx] if tel.mPlayerHasVehicle and tel.mPlayerVehicleIdx < n_tel else None
-        return {
-            'tel': [tel.mVehicles[i] for i in range(n_tel)], 'player_tel': player_tel,
-            'info': o.scoring.mScoringInfo, 'sco': [o.scoring.mVehicles[i] for i in range(n_sco)],
-        }
+        tels = [tel.mVehicles[i] for i in range(n_tel)]
+        sco = [o.scoring.mVehicles[i] for i in range(n_sco)]
+        # 내 차는 순위표의 mIsPlayer와 같은 mID인 텔레메트리. 배열 순서가 순위표와 다를 수 있어 번호(인덱스)보다 ID로 찾는다.
+        pid = next((v.mID for v in sco if v.mIsPlayer), None)
+        player_tel = next((t for t in tels if t.mID == pid), None)
+        if player_tel is None and tel.mPlayerHasVehicle and tel.mPlayerVehicleIdx < n_tel:
+            player_tel = tel.mVehicles[tel.mPlayerVehicleIdx]
+        return {'tel': tels, 'player_tel': player_tel, 'info': o.scoring.mScoringInfo, 'sco': sco}
 
     def diag(self):
         o = self.obj
@@ -320,6 +323,8 @@ class GameReader:
             return None
         t = snap['player_tel']
         ps = next((v for v in snap['sco'] if v.mIsPlayer), None)
+        if t is not None and ps is not None and t.mID != ps.mID:
+            ps = next((v for v in snap['sco'] if v.mID == t.mID), ps)
         if t is None or ps is None:
             self.note = '내 차를 찾지 못함 (트랙에 나가 있어야 합니다)'
             return None
@@ -343,7 +348,9 @@ class GameReader:
             'realtime': bool(info.mInRealtime),
             # 트랙 중심선 기준 가로 위치·가장자리 거리 (순위표 값이라 5 Hz로 갱신됨)
             'lat': round(ps.mPathLateral, 2), 'edge': round(ps.mTrackEdge, 2),
-            'pit': bool(ps.mInPits),
+            'pit': bool(ps.mInPits or ps.mInGarageStall),
+            # 누가 운전 중인가 (0 나, 1 AI, 2 원격, 3 리플레이)·게임의 랩 인정 (2 = 기록 인정)
+            'ctrl': ps.mControl, 'cnt': ps.mCountLapFlag,
         }
         if self.count % 3 == 0:
             cars = self._others(snap, t.mID)

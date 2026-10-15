@@ -10,25 +10,61 @@ const KMH = 3.6;
 export function splitLaps(samples) {
   const laps = [];
   let cur = null;
+  let prev = null;
   for (const s of samples) {
-    if (!cur || s.lap !== cur.lap) {
+    // 기록이 끊긴 곳: 시간이 거꾸로 가거나(세션 재시작) 0.5초 넘게 비거나, 차가 순간이동(차고 복귀·리셋)한 경우
+    const dt = prev ? s.t - prev.t : 0;
+    const jump = prev ? Math.hypot(s.x - prev.x, s.z - prev.z) : 0;
+    const broken = prev && (dt <= 0 || dt > 0.5 || jump > 20 + Math.max(s.v, prev.v) * dt * 2);
+    if (!cur || s.lap !== cur.lap || broken) {
       if (cur) laps.push(cur);
-      cur = { lap: s.lap, samples: [] };
+      cur = { lap: s.lap, samples: [], afterBreak: !!broken };
+      if (broken && laps.length) laps[laps.length - 1].brokenEnd = true;
     }
     cur.samples.push(s);
+    prev = s;
   }
   if (cur) laps.push(cur);
-  // 첫 랩(피트·중간 진입)과 끝나지 않은 마지막 랩은 비교에서 뺀다
-  const done = laps.slice(1, -1).filter((l) => l.samples.length > 50);
-  return done.map((l, i) => finishLap(l, i === 0 && laps.length > 1 ? false : true));
+  // 첫 랩(피트·중간 진입)과 끝나지 않은 마지막 랩은 뺀다.
+  // 끊김 직전·직후 조각도 랩 전체가 아니므로 뺀다 (끊긴 랩은 랩 번호가 바뀌기 전에 끝나거나, 중간부터 시작한다).
+  const done = laps.slice(1, -1).filter((l) => l.samples.length > 50 && !l.afterBreak && !l.brokenEnd);
+  const out = done.map(finishLap);
+  // 랩 길이 확인: 게임이 알려준 트랙 길이(없으면 랩들의 중앙값)와 8% 넘게 다르면 랩 전체를 돈 게 아니다
+  const trackLen = samples.find((s) => s.trackLen > 100)?.trackLen;
+  const refLen = trackLen || median(out.map((l) => l.dist));
+  for (const l of out) {
+    if (refLen && (l.dist < refLen * 0.92 || l.dist > refLen * 1.08)) l.why.push(`랩 거리 ${l.dist.toFixed(0)} m (트랙 ${refLen.toFixed(0)} m)`);
+  }
+  // 게임의 랩 인정 여부(mCountLapFlag: 2 = 기록 인정)가 오면 그대로 따른다. 한 랩도 2가 아니면 이 값은 믿지 않는다.
+  const flagged = out.filter((l) => Number.isFinite(l.cnt));
+  if (flagged.some((l) => l.cnt === 2)) for (const l of flagged) if (l.cnt !== 2) l.why.push('게임이 기록을 인정하지 않음');
+  // 너무 느린 랩(스핀·사고·쿨다운)은 비교 기준을 망가뜨리므로 무효로 본다
+  const ok = out.filter((l) => !l.why.length);
+  const medT = median(ok.map((l) => l.time));
+  for (const l of out) if (medT && l.time > medT * 1.12) l.why.push(`평소보다 ${(l.time - medT).toFixed(1)}초 느림 (사고·스핀 등)`);
+  for (const l of out) l.valid = !l.why.length;
+  return out;
 }
+
+const median = (a) => {
+  if (!a.length) return 0;
+  const b = [...a].sort((x, y) => x - y);
+  return b[b.length >> 1];
+};
 
 function finishLap(raw) {
   const S = raw.samples;
   const time = S[S.length - 1].t - S[0].t;
-  const off = S.some((s) => s.off);
+  let dist = 0;
+  for (let i = 1; i < S.length; i++) dist += Math.hypot(S[i].x - S[i - 1].x, S[i].z - S[i - 1].z);
+  const why = [];
+  if (S.some((s) => s.off)) why.push('트랙 이탈');
   const pit = S.some((s) => s.pit);
-  return { lap: raw.lap, time, valid: !off && !pit, pit, samples: S };
+  if (pit) why.push('피트');
+  if (S.some((s) => s.ctrl !== undefined && s.ctrl !== 0 && s.ctrl !== 3)) why.push('AI가 운전한 구간 있음');
+  // 랩 끝 무렵의 게임 랩 인정 값
+  const last = [...S].reverse().find((s) => Number.isFinite(s.cnt));
+  return { lap: raw.lap, time, dist, why, valid: true, pit, cnt: last?.cnt, samples: S };
 }
 
 // 위치를 따라 누적 거리를 구하고 1 m 간격으로 다시 샘플링한다
@@ -293,11 +329,20 @@ function opponentLaps(samples) {
 }
 
 // ---------- 세션 분석 ----------
-export function analyzeSession(samples) {
+export function analyzeSession(all) {
+  // 한 파일에 트랙·차가 다른 세션이 섞여 있으면 샘플이 가장 많은 조합만 분석한다
+  const key = (x) => `${x.track ?? ''}|${x.car ?? ''}`;
+  const count = new Map();
+  for (const x of all) count.set(key(x), (count.get(key(x)) || 0) + 1);
+  const main = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const samples = count.size > 1 ? all.filter((x) => key(x) === main) : all;
   markTraffic(samples);
   const laps = splitLaps(samples);
   const valid = laps.filter((l) => l.valid);
-  if (!valid.length) return { laps, error: laps.length ? '완주한 유효 랩이 없습니다 (모두 트랙 이탈)' : '완주한 랩이 없습니다. 최소 3바퀴(아웃랩, 측정 랩, 다음 랩 시작)가 필요합니다.' };
+  if (!valid.length) {
+    const why = [...new Set(laps.flatMap((l) => l.why))].join(', ');
+    return { laps, error: laps.length ? `분석할 수 있는 랩이 없습니다. 완주 랩 ${laps.length}개가 모두 무효입니다 (${why}).` : '완주한 랩이 없습니다. 최소 3바퀴(아웃랩, 측정 랩, 다음 랩 시작)가 필요합니다. 차고로 돌아가거나 리셋하면 그 랩은 끊긴 것으로 봅니다.' };
+  }
   const best = valid.reduce((a, b) => (b.time < a.time ? b : a));
   const ref = resampleLap(best);
   // 모든 랩을 기준 랩과 같은 칸 수로 맞춘다 → 같은 인덱스 = 같은 트랙 위치
@@ -352,7 +397,7 @@ export function analyzeSession(samples) {
     o.best = ok.length ? ok.reduce((a, b) => (b.time < a.time ? b : a)) : null;
     return o;
   }).filter((o) => o.best).sort((a, b) => a.best.time - b.best.time);
-  return { laps, best, ref, corners, theoretical, spread, segTimes, opponents, hasLat };
+  return { laps, best, ref, corners, theoretical, spread, segTimes, opponents, hasLat, mixed: count.size > 1 ? count.size : 0 };
 }
 
 function std(a) {

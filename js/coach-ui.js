@@ -86,7 +86,8 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
       const others = A.laps.map((l, i) => i).filter((i) => A.laps[i] !== A.best);
       lapIdx = others.length ? others[others.length - 1] : 0;
     }
-    status(`${sessionName} · 완주 랩 ${A.laps.length}개 · 코너 ${A.corners.length}개 검출`);
+    const bad = A.laps.filter((l) => !l.valid).length;
+    status(`${sessionName} · 완주 랩 ${A.laps.length}개 (유효 ${A.laps.length - bad}, 무효 ${bad}) · 코너 ${A.corners.length}개 검출${A.mixed ? ` · 파일에 트랙·차 조합이 ${A.mixed}개 섞여 있어 가장 긴 세션만 분석` : ''}`);
     render();
   }
 
@@ -285,32 +286,55 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
   }
 
   // 고스트 재생: 베스트(파랑)와 비교 랩(주황)을 같은 시간축으로 움직인다
+  // 고스트 재생: 고른 랩(또는 세션 전체를 이어서)과 고스트 랩을 같은 시간축으로 움직인다.
+  // 고스트는 랩마다 처음부터 다시 출발한다.
   let replay = null;
+  function ghostLaps() {
+    const out = [{ key: 'best', name: `내 베스트 (랩 ${A.best.lap})`, lap: A.best }];
+    A.laps.forEach((l, i) => { if (l.valid && l !== A.best) out.push({ key: 'l' + i, name: `랩 ${l.lap} (${fmt(l.time)})`, lap: l }); });
+    for (const o of A.opponents) out.push({ key: 'o' + o.id, name: `${o.name} (${o.cls}) ${fmt(o.best.time)}`, lap: o.best });
+    return out;
+  }
+  function fillReplaySelects() {
+    const lapSel = $('#co-rp-lap'), gSel = $('#co-rp-ghost');
+    const keepL = lapSel.value, keepG = gSel.value;
+    lapSel.innerHTML = `<option value="sel">선택한 랩</option><option value="all">세션 전체 이어서</option>`;
+    gSel.innerHTML = ghostLaps().map((g) => `<option value="${g.key}">${esc(g.name)}</option>`).join('');
+    if ([...lapSel.options].some((o) => o.value === keepL)) lapSel.value = keepL;
+    if ([...gSel.options].some((o) => o.value === keepG)) gSel.value = keepG;
+  }
+  function stopReplay() { replay = null; $('#co-play').textContent = '고스트 재생'; }
   function toggleReplay() {
-    if (replay) { replay = null; $('#co-play').textContent = '고스트 재생'; drawMap(); return; }
+    if (replay) { stopReplay(); drawMap(); return; }
     if (!A) return;
     $('#co-play').textContent = '정지';
-    const lap = A.laps[lapIdx];
+    // 이어서 재생하면 완주 랩을 순서대로 (무효 랩 포함, 끊긴 조각은 이미 빠져 있다)
+    const seq = $('#co-rp-lap').value === 'all' ? A.laps.slice() : [A.laps[lapIdx]];
+    const ghost = ghostLaps().find((g) => g.key === $('#co-rp-ghost').value) || ghostLaps()[0];
     const start = performance.now();
     const speedUp = +$('#co-speedup').value || 1;
-    replay = { lap };
+    const token = {};
+    replay = token;
+    const at = (R, t) => {
+      let lo = 0, hi = R.n - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (R.t[mid] < t) lo = mid + 1; else hi = mid; }
+      return lo;
+    };
     const tick = (now) => {
-      if (!replay || replay.lap !== lap) return;
-      const t = ((now - start) / 1000) * speedUp;
-      const at = (R) => {
-        let lo = 0, hi = R.n - 1;
-        while (lo < hi) { const mid = (lo + hi) >> 1; if (R.t[mid] < t) lo = mid + 1; else hi = mid; }
-        return lo;
-      };
-      const gi = at(A.ref);
-      const ci = at(lap.R);
-      const opp = targetOpp();
-      const oi = opp ? at(opp.best.R) : 0;
-      drawMap({ ghost: { x: A.ref.x[gi], z: A.ref.z[gi] }, cur: { x: lap.R.x[ci], z: lap.R.z[ci] }, opp: opp ? { x: opp.best.R.x[oi], z: opp.best.R.z[oi] } : null });
-      const dd = opp ? lap.R.t[ci] - opp.best.R.t[ci] : lap.delta[ci];
-      $('#co-replay-info').textContent = `${t.toFixed(1)}초 · 지금 지점에서 ${opp ? opp.name : '베스트'} 대비 ${sign(dd)}초`;
-      for (const ch of Object.values(charts)) { ch.markers = [{ x: ci, label: '', color: '--accent' }]; ch.draw(); }
-      if (t > Math.max(lap.time, A.best.time, opp ? opp.best.time : 0) + 1) { toggleReplay(); return; }
+      if (replay !== token) return;
+      let t = ((now - start) / 1000) * speedUp;
+      // 지금 몇 번째 랩을 재생 중인가
+      let k = 0;
+      while (k < seq.length - 1 && t > seq[k].time) { t -= seq[k].time; k++; }
+      const lap = seq[k];
+      if (k === seq.length - 1 && t > Math.max(lap.time, ghost.lap.time) + 1) { toggleReplay(); return; }
+      const ci = at(lap.R, t);
+      const G = ghost.lap.R;
+      const gi = at(G, t);
+      drawMap({ ghost: { x: G.x[gi], z: G.z[gi] }, cur: { x: lap.R.x[ci], z: lap.R.z[ci] } });
+      const dd = lap.R.t[ci] - G.t[ci];
+      $('#co-replay-info').textContent = `랩 ${lap.lap}${seq.length > 1 ? ` (${k + 1}/${seq.length})` : ''} · ${t.toFixed(1)}초 · ${ghost.name} 대비 ${sign(dd)}초${lap.valid ? '' : ' · 무효 랩'}`;
+      if (lap === A.laps[lapIdx]) for (const ch of Object.values(charts)) { ch.markers = [{ x: ci, label: '', color: '--accent' }]; ch.draw(); }
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -331,15 +355,15 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     };
     // 랩 목록
     $('#co-laps').innerHTML = A.laps.map((l, i) => `<tr class="${i === lapIdx ? 'sel' : ''}" data-i="${i}">
-      <td>랩 ${l.lap}</td><td>${fmt(l.time)}</td><td>${l === A.best ? '베스트' : l.valid ? sign(l.time - A.best.time, 3) : l.pit ? '피트' : '무효'}</td><td class="traffic">${tag(l)}</td></tr>`).join('');
+      <td>랩 ${l.lap}</td><td>${fmt(l.time)}</td><td title="${esc(l.why.join(', '))}">${l === A.best ? '베스트' : l.valid ? sign(l.time - A.best.time, 3) : '무효 · ' + esc(l.why[0] || '')}</td><td class="traffic">${tag(l)}</td></tr>`).join('');
     // 같이 달린 차
     $('#co-opp-box').hidden = !A.opponents.length;
     $('#co-opps').innerHTML = A.opponents.map((o) => `<tr class="${target === 'o:' + o.id ? 'sel' : ''}" data-id="${o.id}">
       <td>${esc(o.name)}</td><td class="co-tag">${esc(o.cls)}</td><td>${fmt(o.best.time)}</td><td>${o.best.time < A.best.time ? `나보다 ${(A.best.time - o.best.time).toFixed(3)}초 빠름` : `나보다 ${(o.best.time - A.best.time).toFixed(3)}초 느림`}</td></tr>`).join('');
-    for (const tr of $('#co-opps').querySelectorAll('tr')) tr.addEventListener('click', () => { target = target === 'o:' + tr.dataset.id ? '' : 'o:' + tr.dataset.id; replay = null; render(); });
+    for (const tr of $('#co-opps').querySelectorAll('tr')) tr.addEventListener('click', () => { target = target === 'o:' + tr.dataset.id ? '' : 'o:' + tr.dataset.id; stopReplay(); render(); });
     $('#co-target').innerHTML = `<option value="">코너마다 내 최고 기록</option>` + A.opponents.map((o) => `<option value="o:${o.id}">${esc(o.name)} (${esc(o.cls)}) ${fmt(o.best.time)}</option>`).join('');
     $('#co-target').value = opp ? target : '';
-    for (const tr of $('#co-laps').querySelectorAll('tr')) tr.addEventListener('click', () => { lapIdx = +tr.dataset.i; replay = null; render(); });
+    for (const tr of $('#co-laps').querySelectorAll('tr')) tr.addEventListener('click', () => { lapIdx = +tr.dataset.i; stopReplay(); render(); });
     $('#co-best').textContent = fmt(A.best.time);
     $('#co-theory').textContent = fmt(A.theoretical);
     $('#co-gap').textContent = sign(A.best.time - A.theoretical, 3);
@@ -347,7 +371,8 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     const sum = sessionSummary(A).slice(0, 4);
     $('#co-summary').innerHTML = sum.map((s) => `<li><b>${s.corner}번 코너</b> 랩마다 평균 ${s.avgLoss.toFixed(2)}초 손해${s.spread > 0.1 ? `, 랩마다 편차 ${s.spread.toFixed(2)}초 (일관성 부족)` : ''}</li>`).join('');
     // 비교 랩 코칭
-    $('#co-lapname').textContent = `랩 ${lap.lap} (${fmt(lap.time)}${lap.valid ? '' : ', 무효'})`;
+    $('#co-lapname').textContent = `랩 ${lap.lap} (${fmt(lap.time)}${lap.valid ? '' : ', 무효: ' + lap.why.join(', ') + ' — 비교가 정확하지 않을 수 있습니다'})`;
+    fillReplaySelects();
     const { tips, skipped } = coachLap(A, lap, opp ? { lap: opp.best, name: opp.name } : null);
     $('#co-tips').innerHTML = tips.length
       ? tips.slice(0, 6).map((t) => `<li><div class="tip-head"><b>${t.corner}번 코너</b><span class="loss">−${t.loss.toFixed(2)}초</span><span class="ref">기준: ${esc(t.refName)}</span></div>${t.reasons.map((r) => `<p>${r}</p>`).join('')}</li>`).join('')
@@ -498,7 +523,7 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
   $('#co-file').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ''; });
   $('#co-demo').addEventListener('click', demo);
   $('#co-play').addEventListener('click', toggleReplay);
-  $('#co-target').addEventListener('change', (e) => { target = e.target.value; replay = null; render(); });
+  $('#co-target').addEventListener('change', (e) => { target = e.target.value; stopReplay(); render(); });
   $('#co-zoom-corner').addEventListener('change', (e) => { zoomCorner = +e.target.value; drawZoom(); });
   new ResizeObserver(() => { if (A) drawZoom(); }).observe(zoom.parentElement);
   $('#co-demo-track').innerHTML = Object.entries(TRACKS).filter(([id]) => id !== 'oval').map(([id, t]) => `<option value="${id}">${t.name}</option>`).join('');

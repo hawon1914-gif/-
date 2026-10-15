@@ -426,6 +426,8 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
           <figcaption>트랙 <span>회색: 베스트 라인 · 비교 랩에서 시간을 잃은 곳은 빨강, 번 곳은 초록 · 파랑 점: 기준 고스트 · 작은 점: 다른 차</span></figcaption>
           <canvas id="co-map"></canvas>
           <div class="replay">
+            <label for="co-rp-lap">재생 <select id="co-rp-lap"></select></label>
+            <label for="co-rp-ghost">고스트 <select id="co-rp-ghost"></select></label>
             <button id="co-play" type="button">고스트 재생</button>
             <label for="co-speedup">배속 <select id="co-speedup"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select></label>
             <span id="co-replay-info" class="tn-status"></span>

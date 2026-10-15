@@ -36,7 +36,7 @@ class StructSizes(unittest.TestCase):
             v.mDriverName[:3] = list(b'Bob')
         o.telemetry.mActiveVehicles = 2
         o.telemetry.mPlayerHasVehicle = True
-        o.telemetry.mPlayerVehicleIdx = 1
+        o.telemetry.mPlayerVehicleIdx = 0  # 일부러 틀린 번호: ID로 찾아야 한다
         for i, vid in enumerate([9, 7]):  # 텔레메트리 순서는 순위표와 다를 수 있다
             t = o.telemetry.mVehicles[i]
             t.mID, t.mLapNumber, t.mElapsedTime = vid, 3, 12.5
