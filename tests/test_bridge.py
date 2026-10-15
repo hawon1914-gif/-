@@ -22,6 +22,12 @@ class StructSizes(unittest.TestCase):
         s = r.read()
         for k in ('t', 'lap', 'x', 'z', 'v', 'thr', 'brk', 'steer', 'gear'):
             self.assertIn(k, s)
+        # 3번째 샘플마다 다른 차 목록
+        cars = [r.read().get('cars') for _ in range(3)]
+        self.assertTrue(any(c for c in cars))
+        c = next(c for c in cars if c)[0]
+        for k in ('id', 'n', 'c', 'x', 'z', 'v', 'lap', 'pit'):
+            self.assertIn(k, c)
 
 
 if __name__ == '__main__':

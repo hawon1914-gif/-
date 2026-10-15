@@ -165,6 +165,8 @@ class GameReader:
         self.sco = Scoring()
         self.player_id = None
         self.last_scoring = 0
+        self.others = {}  # mID → 순위표 정보 (이름·클래스·피트 등, 5 Hz)
+        self.count = 0
 
     def _copy(self, mm, struct):
         # 게임이 쓰는 도중에 읽으면 깨진 값이 나오므로, 시작·끝 버전 번호가 같을 때까지 다시 읽는다
@@ -181,14 +183,22 @@ class GameReader:
             if self._copy(self.sco_map, self.sco):
                 self.last_scoring = now
                 self.player_id = None
+                self.others = {}
                 for i in range(min(self.sco.mScoringInfo.mNumVehicles, MAX_VEHICLES)):
                     v = self.sco.mVehicles[i]
                     if v.mIsPlayer:
                         self.player_id = v.mID
                         self.player_scoring = v
-                        break
+                    else:
+                        self.others[v.mID] = {
+                            'n': text(v.mDriverName), 'c': text(v.mVehicleClass), 'p': v.mPlace,
+                            'pit': bool(v.mInPits or v.mInGarageStall), 'best': round(v.mBestLapTime, 3),
+                            'last': round(v.mLastLapTime, 3), 'ld': v.mLapDist,
+                        }
         if self.player_id is None or not self._copy(self.tel_map, self.tel):
             return None
+        self.count += 1
+        cars = self._others() if self.count % 3 == 0 and self.others else None
         for i in range(min(self.tel.mNumVehicles, MAX_VEHICLES)):
             t = self.tel.mVehicles[i]
             if t.mID != self.player_id:
@@ -196,7 +206,8 @@ class GameReader:
             vel = t.mLocalVel
             wheels = t.mWheels
             off = sum(1 for w in wheels if w.mSurfaceType in OFF_SURFACES) >= 2
-            return {
+            ps = self.player_scoring
+            sample = {
                 't': round(t.mElapsedTime, 4), 'lap': t.mLapNumber,
                 'x': round(t.mPos.x, 3), 'y': round(t.mPos.y, 3), 'z': round(t.mPos.z, 3),
                 'v': round(math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2), 3),
@@ -208,8 +219,33 @@ class GameReader:
                 'track': text(t.mTrackName), 'car': text(t.mVehicleName),
                 'trackLen': round(self.sco.mScoringInfo.mLapDist, 1),
                 'realtime': bool(self.sco.mScoringInfo.mInRealtime),
+                # 트랙 중심선 기준 가로 위치·가장자리 거리 (순위표 값이라 5 Hz로 갱신됨)
+                'lat': round(ps.mPathLateral, 2), 'edge': round(ps.mTrackEdge, 2),
+                'pit': bool(ps.mInPits),
             }
+            if cars is not None:
+                sample['cars'] = cars
+            return sample
         return None
+
+    def _others(self):
+        # 다른 차: 위치·속도는 텔레메트리(매 프레임), 이름·클래스·피트는 순위표에서.
+        # 온라인에서 다른 사람의 페달·조향 입력은 오지 않거나 0이므로 쓰지 않는다.
+        out = []
+        for i in range(min(self.tel.mNumVehicles, MAX_VEHICLES)):
+            t = self.tel.mVehicles[i]
+            info = self.others.get(t.mID)
+            if info is None:
+                continue
+            vel = t.mLocalVel
+            out.append({
+                'id': t.mID, 'n': info['n'], 'c': info['c'], 'p': info['p'],
+                'x': round(t.mPos.x, 2), 'z': round(t.mPos.z, 2),
+                'v': round(math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2), 2),
+                'lap': t.mLapNumber, 'ld': round(info['ld'], 1), 'pit': info['pit'],
+                'best': info['best'], 'last': info['last'],
+            })
+        return out
 
 
 # ---------------------------------------------------------------- 시험용 가짜 데이터
@@ -222,6 +258,8 @@ class DemoReader:
         self.v = 30.0
         self.lap = 1
         self.last = time.time()
+        self.os = -150.0  # 상대 차 (조금 느림, 150 m 앞에서 출발)
+        self.count = 0
 
     def read(self):
         now = time.time()
@@ -239,13 +277,24 @@ class DemoReader:
         if self.s >= L * self.lap:
             self.lap += 1
         ang = 2 * math.pi * u
-        return {
+        self.os += self.v * 0.97 * dt
+        self.count += 1
+        uo = (self.os / L) % 1.0
+        sample = {
             't': round(now - self.t0, 4), 'lap': self.lap, 'x': round(a * math.cos(ang), 3), 'y': 0,
             'z': round(b * math.sin(ang), 3), 'v': round(self.v, 3), 'thr': thr, 'brk': brk,
             'steer': 0.3 if in_corner else 0.0, 'gear': max(1, min(6, int(self.v / 12))), 'rpm': 4000 + int(self.v * 60),
             'maxRpm': 8500, 'off': False, 'tire': [80, 80, 82, 82], 'lapDist': round(self.s % L, 1),
             'track': '데모 타원', 'car': '데모 차량', 'trackLen': L, 'realtime': True,
+            'lat': 0.0, 'edge': 6.0, 'pit': False,
         }
+        if self.count % 3 == 0:
+            ao = 2 * math.pi * uo
+            sample['cars'] = [{
+                'id': 2, 'n': '데모 상대', 'c': 'GT3', 'p': 1, 'x': round(a * math.cos(ao), 2), 'z': round(b * math.sin(ao), 2),
+                'v': round(self.v * 0.97, 2), 'lap': int(self.os // L) + 2, 'ld': round(self.os % L, 1), 'pit': False, 'best': 0, 'last': 0,
+            }]
+        return sample
 
 
 class ReplayReader:

@@ -240,6 +240,9 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
 .co-pedals .pb { height: 8px; background: var(--grid); border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .co-pedals .pb i { display: block; height: 100%; width: 0; background: var(--ok); }
 .co-pedals .pb.brk i { background: var(--drag); }
+.co-zoombox canvas { width: 100%; display: block; }
+.co-laps td.traffic, .co-tag { color: var(--warn); font-size: 12px; }
+#co-opps td:first-child { white-space: nowrap; }
 .co-help { border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; background: var(--panel); }
 .co-help ol { margin: 8px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .co-help p { margin: 0; }
@@ -414,11 +417,13 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
         <div><span>현재 랩</span><b id="co-live-lap">–</b></div>
         <div class="co-delta"><span>베스트 대비</span><b id="co-live-delta">±0.00</b><div class="co-bar" id="co-live-bar"><i></i></div></div>
         <div class="co-pedals"><span>페달</span><div class="pb"><i id="co-live-thr"></i></div><div class="pb brk"><i id="co-live-brk"></i></div></div>
+        <div><span>앞차</span><b id="co-live-ahead">–</b><small id="co-live-ahead-n"></small></div>
+        <div><span>뒤차</span><b id="co-live-behind">–</b><small id="co-live-behind-n"></small></div>
         <p id="co-live-flag" class="dv-invalid"></p>
       </div>
       <div class="co-top">
         <figure class="co-mapbox">
-          <figcaption>트랙 <span>회색: 베스트 라인 · 비교 랩에서 시간을 잃은 곳은 빨강, 번 곳은 초록 · 파랑 점: 베스트 고스트</span></figcaption>
+          <figcaption>트랙 <span>회색: 베스트 라인 · 비교 랩에서 시간을 잃은 곳은 빨강, 번 곳은 초록 · 파랑 점: 기준 고스트 · 작은 점: 다른 차</span></figcaption>
           <canvas id="co-map"></canvas>
           <div class="replay">
             <button id="co-play" type="button">고스트 재생</button>
@@ -435,22 +440,36 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
           <div class="table-wrap"><table class="co-laps"><tbody id="co-laps"></tbody></table></div>
           <h3 class="eyebrow">세션 전체에서 손해가 큰 코너</h3>
           <ol class="co-summary" id="co-summary"></ol>
+          <div id="co-opp-box" hidden>
+            <h3 class="eyebrow">같이 달린 차 <span class="hint">(눌러서 비교 기준으로)</span></h3>
+            <div class="table-wrap"><table class="co-laps"><tbody id="co-opps"></tbody></table></div>
+          </div>
         </div>
       </div>
       <h3 class="eyebrow">코칭 · <span id="co-lapname"></span> <span class="hint">(랩 목록에서 다른 랩을 고를 수 있습니다)</span></h3>
+      <div class="controls">
+        <label for="co-target">비교 기준 <select id="co-target"></select></label>
+      </div>
+      <p class="note" id="co-skipped" hidden></p>
       <ol class="co-tips" id="co-tips"></ol>
       <div class="table-wrap"><table id="co-corners"></table></div>
       <div class="charts">
         <figure><figcaption>속도 <span>파랑: 베스트 · 주황: 비교 랩 · 숫자: 코너</span></figcaption><div class="cw"><canvas id="co-c-speed"></canvas></div></figure>
         <figure><figcaption>페달 <span>실선: 비교 랩 · 점선: 베스트</span></figcaption><div class="cw"><canvas id="co-c-pedal"></canvas></div></figure>
-        <figure><figcaption>베스트 대비 누적 시간 <span>올라가는 구간에서 시간을 잃음</span></figcaption><div class="cw"><canvas id="co-c-delta"></canvas></div></figure>
+        <figure><figcaption><span id="co-delta-name">베스트</span> 대비 누적 시간 <span>올라가는 구간에서 시간을 잃음</span></figcaption><div class="cw"><canvas id="co-c-delta"></canvas></div></figure>
+        <figure><figcaption>라인 차이 <span>기준 라인보다 코너 안쪽 + / 바깥쪽 − (m)</span></figcaption><div class="cw"><canvas id="co-c-line"></canvas></div></figure>
       </div>
+      <figure class="co-zoombox">
+        <figcaption>코너 라인 <span>파랑: 내 베스트 · 보라: 상대 · 주황: 비교 랩 · 회색 띠: 기준 라인 주변 12 m (대략적인 트랙 폭)</span></figcaption>
+        <div class="controls"><label for="co-zoom-corner">코너 <select id="co-zoom-corner"></select></label><span id="co-zoom-info" class="tn-status"></span></div>
+        <canvas id="co-zoom"></canvas>
+      </figure>
       <details class="co-help">
         <summary>르망 얼티밋 연결 방법</summary>
         <ol>
           <li>rF2 Shared Memory Map Plugin의 <code>rFactor2SharedMemoryMapPlugin64.dll</code>을 르망 얼티밋 설치 폴더의 <code>Plugins</code> 폴더에 넣고, <code>UserData\player\CustomPluginVariables.JSON</code>에서 켭니다. 자세한 순서는 저장소의 <code>bridge/README.md</code>에 있습니다. SimHub나 CrewChief를 이미 쓰고 있다면 이미 설치되어 있을 수 있습니다.</li>
           <li>PC에서 <code>bridge/start_lmu_bridge.bat</code>을 실행합니다 (Python 3.8 이상 필요).</li>
-          <li>게임에서 트랙에 나간 뒤 이 화면에서 "실시간 연결"을 누릅니다. 주행은 <code>bridge/recordings</code> 폴더에 자동으로 기록되고, 나중에 "기록 파일 열기"로 다시 분석할 수 있습니다.</li>
+          <li>게임에서 트랙에 나간 뒤 이 화면에서 "실시간 연결"을 누릅니다. 온라인·AI 세션이면 다른 차의 위치·속도도 함께 받아, 앞차에 막힌 코너는 코칭에서 빼고 상대의 랩과 비교할 수 있습니다 (다른 사람의 페달 입력은 게임이 주지 않아 속도·라인만 비교합니다). 주행은 <code>bridge/recordings</code> 폴더에 자동으로 기록되고, 나중에 "기록 파일 열기"로 다시 분석할 수 있습니다.</li>
         </ol>
         <p>패드나 휠은 이 프로그램에 연결할 필요가 없습니다. 게임이 받은 페달·조향 입력이 텔레메트리에 그대로 들어 있습니다.</p>
       </details>

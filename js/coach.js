@@ -1,6 +1,8 @@
 // 주행 코칭 분석: 텔레메트리 샘플 → 랩 분리 → 1 m 간격 재샘플 → 코너 검출 → 코너별 지표 → 코칭 문장.
 // 입력 샘플 형식 (브리지·기록 파일·데모 공통):
-//   { t: 초, lap: 랩 번호, x, z: 평면 위치(m), v: 속도(m/s), thr, brk: 0~1, steer: -1~1, gear, rpm, off?: 트랙 이탈 여부 }
+//   { t: 초, lap: 랩 번호, x, z: 평면 위치(m), v: 속도(m/s), thr, brk: 0~1, steer: -1~1, gear, rpm, off?: 트랙 이탈 여부,
+//     lat?, edge?: 트랙 중심선 기준 가로 위치·가장자리까지 거리(m, 게임이 줄 때),
+//     cars?: [{ id, n: 이름, c: 클래스, x, z, v, lap, pit }] 다른 차들 (온라인·AI 세션, 몇 샘플마다) }
 
 const KMH = 3.6;
 
@@ -25,7 +27,8 @@ function finishLap(raw) {
   const S = raw.samples;
   const time = S[S.length - 1].t - S[0].t;
   const off = S.some((s) => s.off);
-  return { lap: raw.lap, time, valid: !off, samples: S };
+  const pit = S.some((s) => s.pit);
+  return { lap: raw.lap, time, valid: !off && !pit, pit, samples: S };
 }
 
 // 위치를 따라 누적 거리를 구하고 1 m 간격으로 다시 샘플링한다
@@ -35,7 +38,8 @@ export function resampleLap(lap, N = null) {
   for (let i = 1; i < S.length; i++) d[i] = d[i - 1] + Math.hypot(S[i].x - S[i - 1].x, S[i].z - S[i - 1].z);
   const len = d[S.length - 1];
   const n = N ?? Math.floor(len);
-  const out = { n, length: len, t: new Float32Array(n), v: new Float32Array(n), thr: new Float32Array(n), brk: new Float32Array(n), steer: new Float32Array(n), gear: new Int8Array(n), x: new Float32Array(n), z: new Float32Array(n) };
+  const out = { n, length: len, t: new Float32Array(n), v: new Float32Array(n), thr: new Float32Array(n), brk: new Float32Array(n), steer: new Float32Array(n), gear: new Int8Array(n), x: new Float32Array(n), z: new Float32Array(n), lat: new Float32Array(n).fill(NaN), edge: new Float32Array(n).fill(NaN), traffic: new Uint8Array(n) };
+  const hasLat = S.some((s) => Number.isFinite(s.lat));
   let j = 0;
   for (let k = 0; k < n; k++) {
     // 다른 랩과 같은 길이로 맞출 때는 비율로 위치를 정한다
@@ -47,12 +51,14 @@ export function resampleLap(lap, N = null) {
     const lerp = (p) => a[p] + (b[p] - a[p]) * f;
     out.t[k] = lerp('t') - S[0].t;
     out.v[k] = lerp('v');
-    out.thr[k] = lerp('thr');
-    out.brk[k] = lerp('brk');
-    out.steer[k] = lerp('steer');
+    out.thr[k] = a.thr === undefined ? NaN : lerp('thr');
+    out.brk[k] = a.brk === undefined ? NaN : lerp('brk');
+    out.steer[k] = a.steer === undefined ? NaN : lerp('steer');
     out.gear[k] = f < 0.5 ? a.gear : b.gear;
     out.x[k] = lerp('x');
     out.z[k] = lerp('z');
+    if (hasLat && Number.isFinite(a.lat) && Number.isFinite(b.lat)) { out.lat[k] = lerp('lat'); out.edge[k] = lerp('edge'); }
+    out.traffic[k] = a.traffic || b.traffic ? 1 : 0;
   }
   return out;
 }
@@ -176,8 +182,119 @@ export function cornerMetrics(L, c) {
   return { brakePoint, peak, releaseDist, trail, coast, coastAfter, thrPoint, fullPoint, lifts, corrections, minSpeed: vmin * KMH, apexAt, time, from, to };
 }
 
+// ---------- 라인 ----------
+// 기준 랩 라인에 대한 가로 위치(m). 가까운 기준점을 앞뒤 30칸 안에서 찾아 그 접선의 법선 방향 거리를 잰다.
+// 부호는 cross(접선, 위치차)로, 코너 회전 방향(turn)과 같은 식이라 turn × offset > 0 이면 코너 안쪽이다.
+export function lineOffsets(L, R) {
+  const n = R.n;
+  const out = new Float32Array(n);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    let best = Infinity, bj = j;
+    for (let k = Math.max(0, i - 30); k <= Math.min(n - 1, i + 30); k++) {
+      const d = (L.x[i] - R.x[k]) ** 2 + (L.z[i] - R.z[k]) ** 2;
+      if (d < best) { best = d; bj = k; }
+    }
+    j = bj;
+    const a = Math.max(0, j - 2), b = Math.min(n - 1, j + 2);
+    const tx = R.x[b] - R.x[a], tz = R.z[b] - R.z[a];
+    const tl = Math.hypot(tx, tz) || 1;
+    out[i] = (tx * (L.z[i] - R.z[j]) - tz * (L.x[i] - R.x[j])) / tl;
+  }
+  return out;
+}
+
+// 코너 회전 방향: 진입 접선에서 탈출 접선으로 도는 방향 (+1 / −1)
+function turnSign(R, c) {
+  const a = Math.max(2, c.entry), b = Math.min(R.n - 3, c.exit);
+  const t1x = R.x[a + 2] - R.x[a - 2], t1z = R.z[a + 2] - R.z[a - 2];
+  const t2x = R.x[b + 2] - R.x[b - 2], t2z = R.z[b + 2] - R.z[b - 2];
+  return Math.sign(t1x * t2z - t1z * t2x) || 1;
+}
+
+// 기준 랩의 턴인 지점: 꼭짓점 앞에서 진행 방향이 바뀌기 시작하는 곳 (조향 입력이 없는 상대 차에도 쓸 수 있게 위치로 판단)
+function headingTurnIn(R, c) {
+  const head = (i) => Math.atan2(R.z[Math.min(R.n - 1, i + 3)] - R.z[Math.max(0, i - 3)], R.x[Math.min(R.n - 1, i + 3)] - R.x[Math.max(0, i - 3)]);
+  const start = Math.max(c.from, c.entry - 40);
+  const h0 = head(Math.max(3, start));
+  const total = Math.abs(wrap(head(c.apex) - h0));
+  for (let i = start; i <= c.apex; i++) if (Math.abs(wrap(head(i) - h0)) > Math.max(0.05, total * 0.15)) return i;
+  return Math.max(start, c.entry);
+}
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+// 한 코너의 라인 지표 (m, 기준 라인보다 안쪽 +).
+// 한 점 대신 구간의 극값을 본다: 턴인 = 턴인 직전 30 m에서 가장 바깥, 꼭짓점 = ±15 m에서 가장 안쪽, 탈출 = 꼭짓점 뒤에서 가장 바깥.
+function lineMetrics(off, c, sign, absIn) {
+  const n = off.length;
+  const ext = (a, b, most) => {
+    let bi = Math.max(0, Math.min(n - 1, a)), bv = sign * off[bi];
+    for (let i = Math.max(0, a); i <= Math.min(n - 1, b); i++) {
+      const v = sign * off[i];
+      if (most(v, bv)) { bv = v; bi = i; }
+    }
+    return [bv, bi];
+  };
+  const [turnIn, ti] = ext(c.turnIn - 30, c.turnIn, (v, b) => v < b);
+  const [apex, ai] = ext(c.apex - 15, c.apex + 15, (v, b) => v > b);
+  const [exit, xi] = ext(c.apex + 10, Math.min(c.to, c.exit + 40), (v, b) => v < b);
+  const e = (i) => (absIn && Number.isFinite(absIn[i]) ? absIn[i] : null);
+  // 게임이 트랙 가장자리 정보를 주면 안쪽 가장자리까지 실제 거리(m)
+  return { turnIn, apex, exit, turnInEdge: e(ti), apexEdge: e(ai), exitEdge: e(xi) };
+}
+
+// 속도만으로 보는 지표 (페달 입력이 없는 상대 차와 비교할 때)
+export function speedMetrics(L, c) {
+  const from = c.from;
+  const to = Math.min(L.n - 1, c.to);
+  let vmin = Infinity, apexAt = c.apex;
+  for (let i = c.entry; i <= Math.min(to, c.exit); i++) if (L.v[i] < vmin) { vmin = L.v[i]; apexAt = i; }
+  // 감속 시작: 꼭짓점에서 거꾸로 가며 속도가 계속 높아지는 동안 (1 km/h 정도의 흔들림은 허용)
+  let d = apexAt;
+  const lim = Math.max(0, from - 150);
+  let peak = L.v[d];
+  while (d > lim && L.v[d - 1] >= peak - 0.3) { d--; peak = Math.max(peak, L.v[d]); }
+  const time = (to >= L.n - 1 ? L.t[L.n - 1] + (L.t[L.n - 1] - L.t[L.n - 2]) : L.t[to + 1]) - L.t[from];
+  return { decelStart: d, minSpeed: vmin * KMH, apexAt, exitSpeed: L.v[Math.min(to, c.exit)] * KMH, entrySpeed: peak * KMH, time };
+}
+
+// ---------- 트래픽 ----------
+// 내 앞 30 m 안에 다른 차가 있거나 옆 12 m 안에 붙어 있으면 그 샘플은 트래픽 영향
+function markTraffic(samples) {
+  let cars = null, carsT = -Infinity;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    if (s.cars) { cars = s.cars; carsT = s.t; }
+    if (!cars || s.t - carsT > 0.5) continue;
+    const p = samples[Math.max(0, i - 3)];
+    const hx = s.x - p.x, hz = s.z - p.z;
+    const hl = Math.hypot(hx, hz) || 1;
+    for (const o of cars) {
+      if (o.pit) continue;
+      const dx = o.x - s.x, dz = o.z - s.z;
+      const dist = Math.hypot(dx, dz);
+      const ahead = (dx * hx + dz * hz) / hl;
+      if (dist < 12 || (ahead > 0 && dist < 30)) { s.traffic = true; break; }
+    }
+  }
+}
+
+// ---------- 상대 차 ----------
+function opponentLaps(samples) {
+  const byId = new Map();
+  for (const s of samples) {
+    if (!s.cars) continue;
+    for (const o of s.cars) {
+      if (!byId.has(o.id)) byId.set(o.id, { id: o.id, name: o.n || `차량 ${o.id}`, cls: o.c || '', samples: [] });
+      byId.get(o.id).samples.push({ t: s.t, lap: o.lap, x: o.x, z: o.z, v: o.v, pit: o.pit, off: o.off });
+    }
+  }
+  return [...byId.values()].map((o) => ({ ...o, laps: splitLaps(o.samples) })).filter((o) => o.laps.length);
+}
+
 // ---------- 세션 분석 ----------
 export function analyzeSession(samples) {
+  markTraffic(samples);
   const laps = splitLaps(samples);
   const valid = laps.filter((l) => l.valid);
   if (!valid.length) return { laps, error: laps.length ? '완주한 유효 랩이 없습니다 (모두 트랙 이탈)' : '완주한 랩이 없습니다. 최소 3바퀴(아웃랩, 측정 랩, 다음 랩 시작)가 필요합니다.' };
@@ -186,17 +303,56 @@ export function analyzeSession(samples) {
   // 모든 랩을 기준 랩과 같은 칸 수로 맞춘다 → 같은 인덱스 = 같은 트랙 위치
   for (const l of laps) l.R = l === best ? ref : resampleLap(l, ref.n);
   const corners = findCorners(ref);
+  for (const c of corners) { c.turnIn = headingTurnIn(ref, c); c.turn = turnSign(ref, c); }
+  // 게임의 가로 위치(lat) 부호는 문서에 없어서, 위치로 잰 오프셋과 같은 방향이 되도록 데이터로 맞춘다
+  let latSign = 0;
+  const hasLat = Number.isFinite(ref.lat[0]);
+  const offsets = new Map();
+  for (const l of laps) offsets.set(l, l === best ? new Float32Array(ref.n) : lineOffsets(l.R, ref));
+  if (hasLat) {
+    let acc = 0;
+    for (const l of laps) {
+      if (l === best) continue;
+      const off = offsets.get(l);
+      for (let i = 0; i < ref.n; i += 5) if (Number.isFinite(l.R.lat[i])) acc += off[i] * (l.R.lat[i] - ref.lat[i]);
+    }
+    latSign = acc >= 0 ? 1 : -1;
+  }
+  // 안쪽 가장자리까지 거리 = 가장자리 거리 − 안쪽 방향으로의 가로 위치
+  const insideEdge = (R) => (hasLat ? corners.reduce((arr, c) => {
+    for (let i = c.from; i <= Math.min(R.n - 1, c.to); i++) arr[i] = R.edge[i] - c.turn * latSign * R.lat[i];
+    return arr;
+  }, new Float32Array(R.n).fill(NaN)) : null);
   for (const l of laps) {
     l.corners = corners.map((c) => cornerMetrics(l.R, c));
+    l.speed = corners.map((c) => speedMetrics(l.R, c));
+    l.offset = offsets.get(l);
+    const absIn = insideEdge(l.R);
+    l.line = corners.map((c) => lineMetrics(l.offset, c, c.turn, absIn));
+    // 코너 구간 안에 트래픽이 있었는가
+    l.traffic = corners.map((c) => { for (let i = c.from; i <= Math.min(l.R.n - 1, c.exit); i++) if (l.R.traffic[i]) return true; return false; });
     l.delta = Float32Array.from(l.R.t, (t, i) => t - ref.t[i]);
   }
-  // 이론상 베스트: 코너 구간마다 가장 빠른 랩의 시간을 더한다
-  const segTimes = corners.map((c, k) => Math.min(...valid.map((l) => l.corners[k].time)));
+  // 이론상 베스트: 코너 구간마다 트래픽 없이 가장 빠른 랩의 시간을 더한다
+  const clean = (k) => valid.filter((l) => !l.traffic[k]);
+  const segTimes = corners.map((c, k) => Math.min(...(clean(k).length ? clean(k) : valid).map((l) => l.corners[k].time)));
   const refSeg = corners.map((c, k) => best.corners[k].time);
   const theoretical = best.time - refSeg.reduce((a, b) => a + b, 0) + segTimes.reduce((a, b) => a + b, 0);
-  // 코너별 일관성: 유효 랩들의 코너 시간 표준편차
-  const spread = corners.map((c, k) => std(valid.map((l) => l.corners[k].time)));
-  return { laps, best, ref, corners, theoretical, spread, segTimes };
+  // 코너별 일관성: 트래픽 없는 유효 랩들의 코너 시간 표준편차
+  const spread = corners.map((c, k) => std((clean(k).length ? clean(k) : valid).map((l) => l.corners[k].time)));
+  // 상대 차: 같은 기준 라인 위로 맞춰 코너별 속도·라인 지표
+  const opponents = opponentLaps(samples).map((o) => {
+    for (const l of o.laps) {
+      l.R = resampleLap(l, ref.n);
+      l.speed = corners.map((c) => speedMetrics(l.R, c));
+      l.offset = lineOffsets(l.R, ref);
+      l.line = corners.map((c) => lineMetrics(l.offset, c, c.turn, null));
+    }
+    const ok = o.laps.filter((l) => l.valid);
+    o.best = ok.length ? ok.reduce((a, b) => (b.time < a.time ? b : a)) : null;
+    return o;
+  }).filter((o) => o.best).sort((a, b) => a.best.time - b.best.time);
+  return { laps, best, ref, corners, theoretical, spread, segTimes, opponents, hasLat };
 }
 
 function std(a) {
@@ -227,25 +383,63 @@ export function cornerReasons(m, r) {
   if (m.lifts > r.lifts) reasons.push({ w: 1.5, short: '스로틀 망설임', text: `가속 중에 스로틀을 다시 뗐습니다 (${m.lifts}회). 차가 불안정하면 처음부터 조금 덜 열고 점점 여세요.` });
   if (m.corrections > r.corrections + 2) reasons.push({ w: 1, short: '조향 수정 많음', text: `코너 안에서 조향을 ${m.corrections}번 고쳐 잡았습니다. 진입 속도나 라인이 불안정하다는 신호입니다.` });
   if (m.minSpeed < r.minSpeed - 3 && !reasons.length) reasons.push({ w: (r.minSpeed - m.minSpeed) / 3, short: '코너 속도 낮음', text: `코너 최저 속도가 ${(r.minSpeed - m.minSpeed).toFixed(0)} km/h 낮습니다. 더 빠르게 굴려도 됩니다.` });
-  if (!reasons.length) reasons.push({ w: 0, short: '', text: '페달 조작에서 뚜렷한 차이는 없습니다. 라인(지도)을 비교해 보세요.' });
+  if (!reasons.length) reasons.push({ w: 0, short: '', text: '페달 조작에서 뚜렷한 차이는 없습니다.' });
   return reasons.sort((a, b) => b.w - a.w);
 }
 
-// 비교 랩의 코너마다, 그 코너를 가장 빨리 지난 랩과 비교해 손해가 큰 순서로 정리
-// (베스트 랩이 모든 코너에서 가장 빠르지는 않으므로 코너별 최고 기록을 기준으로 삼는다)
-export function coachLap(A, lap) {
+// 라인 비교: 턴인·꼭짓점·탈출의 가로 위치 차이 (m, 안쪽 +). 0.8 m 이상만 말한다.
+export function lineReasons(m, r) {
+  const out = [];
+  const dA = m.apex - r.apex, dT = m.turnIn - r.turnIn, dX = m.exit - r.exit;
+  const edge = (v) => (v === null || !Number.isFinite(v) ? '' : ` (안쪽 가장자리까지 ${v.toFixed(1)} m)`);
+  if (dA < -0.8) out.push({ w: -dA / 0.8, short: '에이펙스 놓침', text: `꼭짓점에서 기준보다 ${(-dA).toFixed(1)} m 바깥으로 지나갔습니다${edge(m.apexEdge)}. 안쪽에 더 붙이세요.` });
+  if (dT > 0.8) out.push({ w: dT / 0.8, short: '진입 폭 안 씀', text: `턴인할 때 기준보다 ${dT.toFixed(1)} m 안쪽에 있었습니다${edge(m.turnInEdge)}. 진입 전에 바깥쪽을 더 쓰면 코너를 더 크게 돌 수 있습니다.` });
+  if (dX > 0.8) out.push({ w: dX / 0.8, short: '탈출 폭 안 씀', text: `탈출에서 기준보다 ${dX.toFixed(1)} m 안쪽에 머물렀습니다. 바깥쪽 끝까지 흘려 보내며 일찍 가속하세요.` });
+  if (dX < -1.5 && dA > 0.5) out.push({ w: -dX / 1.2, short: '일찍 꺾음', text: `꼭짓점은 안쪽(${dA.toFixed(1)} m)인데 탈출이 ${(-dX).toFixed(1)} m 바깥으로 밀렸습니다. 너무 일찍 꺾어서 탈출에서 가속을 늦춰야 하는 전형적인 형태입니다.` });
+  return out;
+}
+
+// 상대 차와 비교할 때는 페달 입력이 없으므로 속도 흐름으로 판단한다
+export function speedReasons(m, r) {
+  const out = [];
+  const dd = m.decelStart - r.decelStart;
+  if (dd < -10) out.push({ w: -dd / 10, short: '감속 일찍', text: `상대보다 ${-dd} m 일찍 감속을 시작했습니다.` });
+  if (dd > 10 && m.minSpeed < r.minSpeed - 2) out.push({ w: dd / 10, short: '감속 늦음', text: `상대보다 ${dd} m 늦게 감속했지만 최저 속도가 ${(r.minSpeed - m.minSpeed).toFixed(0)} km/h 낮습니다. 너무 깊게 들어갔습니다.` });
+  if (m.minSpeed < r.minSpeed - 3) out.push({ w: (r.minSpeed - m.minSpeed) / 3, short: '코너 속도 낮음', text: `최저 속도가 상대보다 ${(r.minSpeed - m.minSpeed).toFixed(0)} km/h 낮습니다.` });
+  if (m.exitSpeed < r.exitSpeed - 4) out.push({ w: (r.exitSpeed - m.exitSpeed) / 4, short: '탈출 느림', text: `탈출 속도가 상대보다 ${(r.exitSpeed - m.exitSpeed).toFixed(0)} km/h 낮아 다음 직선에서 손해를 봅니다.` });
+  return out;
+}
+
+// 비교 랩의 코너마다 기준과 비교해 손해가 큰 순서로 정리.
+// target 없음: 코너마다 트래픽 없이 가장 빨리 지난 내 랩이 기준 (베스트 랩이 모든 코너에서 최고는 아니므로)
+// target { lap }: 상대 차의 랩이 기준 (속도·라인만 비교)
+export function coachLap(A, lap, target = null) {
   const tips = [];
+  const skipped = [];
   const valid = A.laps.filter((l) => l.valid);
   A.corners.forEach((c, k) => {
-    const ref = valid.reduce((a, b) => (b.corners[k].time < a.corners[k].time ? b : a));
-    if (ref === lap) return;
-    const m = lap.corners[k];
-    const r = ref.corners[k];
-    const loss = m.time - r.time;
+    if (lap.traffic?.[k]) { skipped.push(c.id); return; }
+    let ref, loss, reasons, refName;
+    if (target) {
+      ref = target.lap;
+      loss = lap.speed[k].time - ref.speed[k].time;
+      reasons = [...speedReasons(lap.speed[k], ref.speed[k]), ...lineReasons(lap.line[k], ref.line[k])];
+      refName = target.name;
+    } else {
+      const pool = valid.filter((l) => !l.traffic[k]);
+      if (!pool.length) return;
+      ref = pool.reduce((a, b) => (b.corners[k].time < a.corners[k].time ? b : a));
+      if (ref === lap) return;
+      loss = lap.corners[k].time - ref.corners[k].time;
+      reasons = [...cornerReasons(lap.corners[k], ref.corners[k]).filter((x) => x.w > 0), ...lineReasons(lap.line[k], ref.line[k])];
+      refName = `랩 ${ref.lap}`;
+    }
     if (loss < 0.04) return;
-    tips.push({ corner: c.id, loss, reasons: cornerReasons(m, r).slice(0, 2).map((x) => x.text), refLap: ref.lap });
+    reasons.sort((a, b) => b.w - a.w);
+    if (!reasons.length) reasons.push({ text: '페달·속도·라인에서 뚜렷한 차이는 없습니다. 조금씩 고르게 느립니다.', short: '' });
+    tips.push({ corner: c.id, loss, reasons: reasons.slice(0, 2).map((x) => x.text), short: reasons[0].short, refLap: ref.lap, refName });
   });
-  return tips.sort((a, b) => b.loss - a.loss);
+  return { tips: tips.sort((a, b) => b.loss - a.loss), skipped };
 }
 
 // 세션 전체 요약: 코너별 평균 손해와 반복되는 실수
@@ -253,7 +447,9 @@ export function sessionSummary(A) {
   const valid = A.laps.filter((l) => l.valid);
   return A.corners.map((c, k) => {
     const fastest = A.segTimes[k];
-    const avgLoss = valid.reduce((s, l) => s + (l.corners[k].time - fastest), 0) / valid.length;
+    const pool = valid.filter((l) => !l.traffic[k]);
+    const use = pool.length ? pool : valid;
+    const avgLoss = use.reduce((s, l) => s + (l.corners[k].time - fastest), 0) / use.length;
     return { corner: c.id, avgLoss, spread: A.spread[k], minSpeed: c.minSpeed };
   }).sort((a, b) => b.avgLoss - a.avgLoss);
 }
