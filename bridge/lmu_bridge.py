@@ -536,7 +536,8 @@ def main():
                 time.sleep(max(0.0, period - (time.time() - tick)))
                 continue
             for s in batch:
-                if s.get('realtime', True) and s['t'] != last_t:
+                # 주행 중이 아니어도 차가 움직이면 받는다 (게임 안에서 리플레이를 틀어 둔 경우를 위해)
+                if (s.get('realtime', True) or s.get('v', 0) > 1) and s['t'] != last_t:
                     last_t = s['t']
                     status.update(connected=True, track=s.get('track', ''), car=s.get('car', ''))
                     status['samples'] += 1
