@@ -1,7 +1,7 @@
 """
 Le Mans Ultimate (rFactor 2 엔진) 텔레메트리 브리지.
 
-게임의 공유 메모리(rF2 Shared Memory Map Plugin)를 초당 60번 읽어서
+게임의 공유 메모리를 초당 60번 읽어서 (게임 내장 LMU_Data 우선, 없으면 rF2 Shared Memory Map Plugin)
   1) http://127.0.0.1:8770/stream 으로 실시간 전송 (Aero Lab의 '코칭' 탭이 받음)
   2) recordings/ 폴더에 세션을 .jsonl 파일로 기록
 한다. 파이썬 표준 라이브러리만 쓰므로 따로 설치할 것이 없다 (Python 3.8 이상, Windows).
@@ -154,19 +154,108 @@ def text(arr):
 OFF_SURFACES = {2, 3, 4}
 
 
-# ---------------------------------------------------------------- 게임 읽기
-class GameReader:
+# ---------------------------------------------------------------- 르망 얼티밋 내장 공유 메모리 (LMU_Data)
+# 2025년 이후 르망 얼티밋은 플러그인 없이 게임이 직접 'LMU_Data'를 내보낸다.
+# 구조는 게임 폴더 Support\SharedMemoryInterface\SharedMemoryInterface.hpp (S397) 기준이며,
+# 공개 파이썬 구현 pyLMUSharedMemory(TinyPedal, MIT)와 크기·오프셋을 맞췄다.
+# 차량별 텔레메트리·순위표 구조는 rF2와 같아서 위의 VehicleTelemetry·VehicleScoring·ScoringInfo를 그대로 쓴다.
+LMU_MAX_VEHICLES = 104
+
+
+class LMUScoringData(ctypes.Structure):
+    _pack_ = 4
+    _fields_ = [
+        ('mScoringInfo', ScoringInfo), ('mStreamSize', ctypes.c_ubyte * 12),
+        ('mVehicles', VehicleScoring * LMU_MAX_VEHICLES), ('mStream', ctypes.c_ubyte * 65536),
+    ]
+
+
+class LMUTelemetryData(ctypes.Structure):
+    _pack_ = 4
+    _fields_ = [
+        ('mActiveVehicles', ctypes.c_uint8), ('mPlayerVehicleIdx', ctypes.c_uint8), ('mPlayerHasVehicle', ctypes.c_bool),
+        ('mVehicles', VehicleTelemetry * LMU_MAX_VEHICLES),
+    ]
+
+
+class LMUApplicationState(ctypes.Structure):
+    _pack_ = 4
+    _fields_ = [
+        ('mAppWindow', ctypes.c_ulonglong), ('mWidth', ctypes.c_uint), ('mHeight', ctypes.c_uint),
+        ('mRefreshRate', ctypes.c_uint), ('mWindowed', ctypes.c_uint), ('mOptionsLocation', ctypes.c_ubyte),
+        ('mOptionsPage', ctypes.c_char * 31), ('mExpansion', ctypes.c_ubyte * 204),
+    ]
+
+
+class LMUGeneric(ctypes.Structure):
+    _pack_ = 4
+    _fields_ = [
+        ('mEvents', ctypes.c_uint * 16), ('mGameVersion', ctypes.c_int), ('mFFBTorque', ctypes.c_float),
+        ('mAppInfo', LMUApplicationState),
+    ]
+
+
+class LMUObjectOut(ctypes.Structure):
+    _pack_ = 4
+    _fields_ = [
+        ('generic', LMUGeneric), ('paths', ctypes.c_char * (260 * 5)),
+        ('scoring', LMUScoringData), ('telemetry', LMUTelemetryData),
+    ]
+
+
+def map_exists(name):
+    """이름 붙은 공유 메모리가 이미 있는지 (Windows). mmap은 없으면 새로 만들어 버려서 따로 확인한다."""
+    if sys.platform != 'win32':
+        return False
+    k = ctypes.windll.kernel32
+    k.OpenFileMappingW.restype = ctypes.c_void_p
+    k.OpenFileMappingW.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p]
+    k.CloseHandle.argtypes = [ctypes.c_void_p]
+    h = k.OpenFileMappingW(0x0004, 0, name)  # FILE_MAP_READ
+    if h:
+        k.CloseHandle(h)
+        return True
+    return False
+
+
+class LMUSource:
+    """게임 내장 LMU_Data를 통째로 복사해 읽는다 (약 320 KB)."""
+    name = '르망 얼티밋 내장 공유 메모리 (LMU_Data)'
+
+    def __init__(self, mm=None):
+        self.mm = mm if mm is not None else mmap.mmap(-1, ctypes.sizeof(LMUObjectOut), 'LMU_Data')
+        self.obj = LMUObjectOut()
+
+    def snapshot(self):
+        size = ctypes.sizeof(LMUObjectOut)
+        self.mm.seek(0)
+        ctypes.memmove(ctypes.addressof(self.obj), self.mm.read(size), size)
+        o = self.obj
+        tel = o.telemetry
+        n_tel = min(tel.mActiveVehicles, LMU_MAX_VEHICLES)
+        n_sco = min(o.scoring.mScoringInfo.mNumVehicles, LMU_MAX_VEHICLES)
+        player_tel = tel.mVehicles[tel.mPlayerVehicleIdx] if tel.mPlayerHasVehicle and tel.mPlayerVehicleIdx < n_tel else None
+        return {
+            'tel': [tel.mVehicles[i] for i in range(n_tel)], 'player_tel': player_tel,
+            'info': o.scoring.mScoringInfo, 'sco': [o.scoring.mVehicles[i] for i in range(n_sco)],
+        }
+
+    def diag(self):
+        o = self.obj
+        return (f'차량 {o.scoring.mScoringInfo.mNumVehicles}대, 내 차 있음={bool(o.telemetry.mPlayerHasVehicle)}, '
+                f'주행 중={bool(o.scoring.mScoringInfo.mInRealtime)}, 게임 버전={o.generic.mGameVersion}')
+
+
+class RF2Source:
+    """rF2 Shared Memory Map Plugin (예전 방식, 플러그인 DLL 필요)."""
+    name = 'rF2 Shared Memory Map Plugin'
+
     def __init__(self):
-        if sys.platform != 'win32':
-            raise SystemExit('게임 연결은 Windows에서만 됩니다. 시험하려면 --demo 를 쓰세요.')
         self.tel_map = mmap.mmap(-1, ctypes.sizeof(Telemetry), '$rFactor2SMMP_Telemetry$')
         self.sco_map = mmap.mmap(-1, ctypes.sizeof(Scoring), '$rFactor2SMMP_Scoring$')
         self.tel = Telemetry()
         self.sco = Scoring()
-        self.player_id = None
         self.last_scoring = 0
-        self.others = {}  # mID → 순위표 정보 (이름·클래스·피트 등, 5 Hz)
-        self.count = 0
 
     def _copy(self, mm, struct):
         # 게임이 쓰는 도중에 읽으면 깨진 값이 나오므로, 시작·끝 버전 번호가 같을 때까지 다시 읽는다
@@ -177,73 +266,107 @@ class GameReader:
                 return True
         return False
 
-    def read(self):
+    def snapshot(self):
         now = time.time()
-        if now - self.last_scoring > 0.2 or self.player_id is None:
-            if self._copy(self.sco_map, self.sco):
-                self.last_scoring = now
-                self.player_id = None
-                self.others = {}
-                for i in range(min(self.sco.mScoringInfo.mNumVehicles, MAX_VEHICLES)):
-                    v = self.sco.mVehicles[i]
-                    if v.mIsPlayer:
-                        self.player_id = v.mID
-                        self.player_scoring = v
-                    else:
-                        self.others[v.mID] = {
-                            'n': text(v.mDriverName), 'c': text(v.mVehicleClass), 'p': v.mPlace,
-                            'pit': bool(v.mInPits or v.mInGarageStall), 'best': round(v.mBestLapTime, 3),
-                            'last': round(v.mLastLapTime, 3), 'ld': v.mLapDist,
-                        }
-        if self.player_id is None or not self._copy(self.tel_map, self.tel):
+        if now - self.last_scoring > 0.2 and self._copy(self.sco_map, self.sco):
+            self.last_scoring = now
+        if not self._copy(self.tel_map, self.tel):
             return None
-        self.count += 1
-        cars = self._others() if self.count % 3 == 0 and self.others else None
-        for i in range(min(self.tel.mNumVehicles, MAX_VEHICLES)):
-            t = self.tel.mVehicles[i]
-            if t.mID != self.player_id:
-                continue
-            vel = t.mLocalVel
-            wheels = t.mWheels
-            off = sum(1 for w in wheels if w.mSurfaceType in OFF_SURFACES) >= 2
-            ps = self.player_scoring
-            sample = {
-                't': round(t.mElapsedTime, 4), 'lap': t.mLapNumber,
-                'x': round(t.mPos.x, 3), 'y': round(t.mPos.y, 3), 'z': round(t.mPos.z, 3),
-                'v': round(math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2), 3),
-                'thr': round(t.mUnfilteredThrottle, 3), 'brk': round(t.mUnfilteredBrake, 3),
-                'steer': round(t.mUnfilteredSteering, 3), 'gear': t.mGear, 'rpm': round(t.mEngineRPM),
-                'maxRpm': round(t.mEngineMaxRPM), 'off': off,
-                'tire': [round(sum(w.mTireInnerLayerTemperature) / 3 - 273.15, 1) for w in wheels],
-                'lapDist': round(self.player_scoring.mLapDist, 1),
-                'track': text(t.mTrackName), 'car': text(t.mVehicleName),
-                'trackLen': round(self.sco.mScoringInfo.mLapDist, 1),
-                'realtime': bool(self.sco.mScoringInfo.mInRealtime),
-                # 트랙 중심선 기준 가로 위치·가장자리 거리 (순위표 값이라 5 Hz로 갱신됨)
-                'lat': round(ps.mPathLateral, 2), 'edge': round(ps.mTrackEdge, 2),
-                'pit': bool(ps.mInPits),
-            }
-            if cars is not None:
-                sample['cars'] = cars
-            return sample
-        return None
+        n_sco = min(self.sco.mScoringInfo.mNumVehicles, MAX_VEHICLES)
+        sco = [self.sco.mVehicles[i] for i in range(n_sco)]
+        tel = [self.tel.mVehicles[i] for i in range(min(self.tel.mNumVehicles, MAX_VEHICLES))]
+        pid = next((v.mID for v in sco if v.mIsPlayer), None)
+        player_tel = next((t for t in tel if t.mID == pid), None)
+        return {'tel': tel, 'player_tel': player_tel, 'info': self.sco.mScoringInfo, 'sco': sco}
 
-    def _others(self):
-        # 다른 차: 위치·속도는 텔레메트리(매 프레임), 이름·클래스·피트는 순위표에서.
+    def diag(self):
+        return f'차량 {self.sco.mScoringInfo.mNumVehicles}대, 주행 중={bool(self.sco.mScoringInfo.mInRealtime)}'
+
+
+# ---------------------------------------------------------------- 게임 읽기
+class GameReader:
+    def __init__(self, source=None):
+        if source is None and sys.platform != 'win32':
+            raise SystemExit('게임 연결은 Windows에서만 됩니다. 시험하려면 --demo 를 쓰세요.')
+        self.src = source
+        self.last_find = 0
+        self.count = 0
+        self.note = ''
+
+    def _find(self):
+        # 내장 LMU_Data를 먼저 찾고, 없으면 예전 플러그인 방식
+        if map_exists('LMU_Data'):
+            self.src = LMUSource()
+        elif map_exists('$rFactor2SMMP_Telemetry$'):
+            self.src = RF2Source()
+        if self.src:
+            print(f'[브리지] 찾음: {self.src.name}')
+
+    def diag(self):
+        if self.src is None:
+            return '게임의 공유 메모리를 찾지 못했습니다. 게임이 켜져 있는지, 설정에서 플러그인(Enable Plugins)이 켜져 있는지 확인하세요.'
+        return f'{self.src.name}: {self.src.diag()}{" · " + self.note if self.note else ""}'
+
+    def read(self):
+        if self.src is None:
+            if time.time() - self.last_find < 2:
+                return None
+            self.last_find = time.time()
+            self._find()
+            if self.src is None:
+                return None
+        snap = self.src.snapshot()
+        if snap is None:
+            return None
+        t = snap['player_tel']
+        ps = next((v for v in snap['sco'] if v.mIsPlayer), None)
+        if t is None or ps is None:
+            self.note = '내 차를 찾지 못함 (트랙에 나가 있어야 합니다)'
+            return None
+        self.note = ''
+        info = snap['info']
+        self.count += 1
+        vel = t.mLocalVel
+        wheels = t.mWheels
+        off = sum(1 for w in wheels if w.mSurfaceType in OFF_SURFACES) >= 2
+        sample = {
+            't': round(t.mElapsedTime, 4), 'lap': t.mLapNumber,
+            'x': round(t.mPos.x, 3), 'y': round(t.mPos.y, 3), 'z': round(t.mPos.z, 3),
+            'v': round(math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2), 3),
+            'thr': round(t.mUnfilteredThrottle, 3), 'brk': round(t.mUnfilteredBrake, 3),
+            'steer': round(t.mUnfilteredSteering, 3), 'gear': t.mGear, 'rpm': round(t.mEngineRPM),
+            'maxRpm': round(t.mEngineMaxRPM), 'off': off,
+            'tire': [round(sum(w.mTireInnerLayerTemperature) / 3 - 273.15, 1) for w in wheels],
+            'lapDist': round(ps.mLapDist, 1),
+            'track': text(t.mTrackName), 'car': text(t.mVehicleName),
+            'trackLen': round(info.mLapDist, 1),
+            'realtime': bool(info.mInRealtime),
+            # 트랙 중심선 기준 가로 위치·가장자리 거리 (순위표 값이라 5 Hz로 갱신됨)
+            'lat': round(ps.mPathLateral, 2), 'edge': round(ps.mTrackEdge, 2),
+            'pit': bool(ps.mInPits),
+        }
+        if self.count % 3 == 0:
+            cars = self._others(snap, t.mID)
+            if cars:
+                sample['cars'] = cars
+        return sample
+
+    def _others(self, snap, my_id):
+        # 다른 차: 위치·속도는 텔레메트리, 이름·클래스·피트는 순위표에서.
         # 온라인에서 다른 사람의 페달·조향 입력은 오지 않거나 0이므로 쓰지 않는다.
+        sco = {v.mID: v for v in snap['sco']}
         out = []
-        for i in range(min(self.tel.mNumVehicles, MAX_VEHICLES)):
-            t = self.tel.mVehicles[i]
-            info = self.others.get(t.mID)
-            if info is None:
+        for t in snap['tel']:
+            v = sco.get(t.mID)
+            if v is None or t.mID == my_id:
                 continue
             vel = t.mLocalVel
             out.append({
-                'id': t.mID, 'n': info['n'], 'c': info['c'], 'p': info['p'],
+                'id': t.mID, 'n': text(v.mDriverName), 'c': text(v.mVehicleClass), 'p': v.mPlace,
                 'x': round(t.mPos.x, 2), 'z': round(t.mPos.z, 2),
                 'v': round(math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2), 2),
-                'lap': t.mLapNumber, 'ld': round(info['ld'], 1), 'pit': info['pit'],
-                'best': info['best'], 'last': info['last'],
+                'lap': t.mLapNumber, 'ld': round(v.mLapDist, 1), 'pit': bool(v.mInPits or v.mInGarageStall),
+                'best': round(v.mBestLapTime, 3), 'last': round(v.mLastLapTime, 3),
             })
         return out
 
@@ -437,7 +560,9 @@ def main():
                     if args.replay and reader.i >= len(reader.rows):
                         print('[브리지] 재생이 끝났습니다.')
                         break
-                    print('[브리지] 게임 데이터를 기다리는 중… (트랙에 나가 있어야 하고, 플러그인이 켜져 있어야 합니다)')
+                    print('[브리지] 게임 데이터를 기다리는 중…')
+                    if hasattr(reader, 'diag'):
+                        print('         ' + reader.diag())
             time.sleep(max(0.0, period - (time.time() - tick)))
     except KeyboardInterrupt:
         pass

@@ -2,33 +2,19 @@
 
 게임의 텔레메트리를 읽어 Aero Lab의 **코칭** 탭으로 보내고, 주행을 파일로 기록합니다.
 
-## 1. 게임 쪽 준비 (한 번만)
+## 1. 게임 쪽 준비
 
-르망 얼티밋은 rFactor 2 엔진이라 **rF2 Shared Memory Map Plugin**으로 텔레메트리를 내보냅니다.
+최근 르망 얼티밋은 게임이 직접 공유 메모리(`LMU_Data`)를 내보냅니다. 브리지는 이것을 먼저 찾으므로 **따로 설치할 플러그인이 없습니다.**
 
-1. https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases 에서 최신 릴리스를 받아 `rFactor2SharedMemoryMapPlugin64.dll`을 꺼냅니다.
-2. 르망 얼티밋 설치 폴더의 `Plugins` 폴더에 넣습니다.
-   예: `C:\Program Files (x86)\Steam\steamapps\common\Le Mans Ultimate\Plugins`
-3. 설치 폴더의 `UserData\player\CustomPluginVariables.JSON`을 열어 아래 항목이 있는지 확인하고, 없으면 추가합니다. `" Enabled"` 앞의 공백은 원래 형식입니다.
-   ```json
-   "rFactor2SharedMemoryMapPlugin64.dll": {
-     " Enabled": 1,
-     "DebugISIInternals": 0,
-     "DebugOutputLevel": 0,
-     "DebugOutputSource": 1,
-     "DedicatedServerMapGlobally": 0,
-     "EnableDirectMemoryAccess": 0,
-     "EnableHWControlInput": 1,
-     "EnableRulesControlInput": 0,
-     "EnableWeatherControlInput": 0,
-     "UnsubscribedBuffersMask": 0
-   }
-   ```
-4. 게임을 다시 시작합니다.
+- 게임 설정에 플러그인 사용(Enable Plugins) 항목이 있으면 켜 두세요. 다른 프로그램(LMU Pitwall)의 안내로는 이 설정이 켜져 있어야 데이터가 나온다고 합니다. 직접 확인하지는 못했습니다.
+- 메모리 구조는 게임 폴더 `Support\SharedMemoryInterface\SharedMemoryInterface.hpp`(S397) 기준이며, 공개 구현 pyLMUSharedMemory(TinyPedal)와 크기·오프셋을 맞췄습니다.
 
-SimHub이나 CrewChief를 쓰고 있다면 이 플러그인이 이미 설치되어 있을 수 있습니다.
+`LMU_Data`가 없는 예전 버전이면 **rF2 Shared Memory Map Plugin**을 찾습니다.
 
-**확인하지 못한 점:** 르망 얼티밋 최신 버전이 이 플러그인 없이 자체 공유 메모리를 제공하는지는 확인하지 못했습니다. 위 방법으로 연결되지 않으면 브리지 창에 나오는 메시지를 알려주세요.
+1. https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases 에서 `rFactor2SharedMemoryMapPlugin64.dll`을 받아 르망 얼티밋 설치 폴더의 `Plugins` 폴더에 넣습니다.
+2. `UserData\player\CustomPluginVariables.JSON`에 `"rFactor2SharedMemoryMapPlugin64.dll": { " Enabled": 1 }` 항목을 넣고 게임을 다시 시작합니다.
+
+연결이 안 되면 브리지 창에 10초마다 무엇을 찾았는지(공유 메모리 종류, 차량 수, 내 차 여부, 주행 중 여부)가 나옵니다. 그 줄을 알려주세요.
 
 ## 2. 브리지 실행
 
