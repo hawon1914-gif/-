@@ -1,8 +1,5 @@
 // 코칭 탭: 실시간 연결(브리지)·기록 파일·데모 세션 → 랩 분석, 지도 고스트, 코너별 비교, 코칭, 음성 안내
-import { engineFor } from './drivetrain.js';
-import { buildTrack, TRACKS } from './track.js';
 import { analyzeSession, coachLap, sessionSummary, cornerMetrics, cornerReasons } from './coach.js';
-import { makeDemoSession } from './coach-demo.js';
 import { LineChart } from './chart.js';
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888';
@@ -26,6 +23,13 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
   const zoom = $('#co-zoom');
   let target = ''; // '' = 코너별 내 최고, 'o:<id>' = 상대 차 베스트 랩
   let zoomCorner = 0;
+  let showAllInc = false;
+  let focusIdx = -1; // 사고 지점 (차트 표시)
+  const incHtml = (e, withLap) => `<div class="tip-head"><b>${withLap ? `랩 ${e.lap} · ` : ''}${e.corner}번 코너 ${esc(e.name)}</b>
+    <span class="loss">${e.loss > 0.05 ? `−${e.loss.toFixed(2)}초` : '시간 손해 없음'}</span>
+    <span class="meta">${e.phase} · ${e.speed.toFixed(0)} km/h${e.peakSlip > 5 ? ` · 최대 미끄러짐 ${e.peakSlip.toFixed(0)}°` : ''}</span></div>
+    ${e.kind === 'off' && e.loss <= 0.05 ? '<p>시간은 잃지 않았지만 트랙 밖으로 나갔습니다. 대회라면 트랙 리밋 경고·무효 랩 대상입니다.</p>' : ''}
+    ${e.causes.map((c) => `<p>${esc(c)}</p>`).join('')}${e.evidence ? `<p class="meta">${esc(e.evidence)}</p>` : ''}`;
   let samples = [];
   let A = null; // 분석 결과
   let lapIdx = -1; // 비교 랩
@@ -65,17 +69,6 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     }).catch((err) => status(`파일을 읽지 못했습니다: ${err.message}`));
   }
 
-  function demo() {
-    status('데모 세션을 만드는 중…');
-    setTimeout(() => {
-      const tid = $('#co-demo-track').value;
-      const D = makeDemoSession(getCar(), getEnv(), engineFor(getCarId()), buildTrack(tid), { laps: 6, seed: Math.floor(Math.random() * 1000) });
-      samples = D.samples;
-      sessionName = D.name;
-      analyze();
-    }, 30);
-  }
-
   // ---------- 분석 ----------
   function analyze(keepLap = false) {
     const res = analyzeSession(samples);
@@ -87,7 +80,7 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
       lapIdx = others.length ? others[others.length - 1] : 0;
     }
     const bad = A.laps.filter((l) => !l.valid).length;
-    status(`${sessionName} · 완주 랩 ${A.laps.length}개 (유효 ${A.laps.length - bad}, 무효 ${bad}) · 코너 ${A.corners.length}개 검출${A.mixed ? ` · 파일에 트랙·차 조합이 ${A.mixed}개 섞여 있어 가장 긴 세션만 분석` : ''}`);
+    status(`${sessionName} · 완주 랩 ${A.laps.length}개 ${bad ? `(피트·랩 거리 이상 등으로 기준 계산에서 뺀 랩 ${bad}개)` : ''} · 사고·실수 ${A.incidents.length}건 · 코너 ${A.corners.length}개 검출${A.mixed ? ` · 파일에 트랙·차 조합이 ${A.mixed}개 섞여 있어 가장 긴 세션만 분석` : ''}`);
     render();
   }
 
@@ -349,13 +342,29 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     if (!has) return;
     const lap = A.laps[lapIdx];
     const opp = targetOpp();
+    const incTag = (l) => l.incidents.map((e) => `${e.name.replace(' (추정)', '')} ${e.corner}번`).join(', ');
     const tag = (l) => {
       const ks = A.corners.filter((c, k) => l.traffic[k]).map((c) => c.id);
       return ks.length ? `트래픽 ${ks.join(',')}번` : '';
     };
     // 랩 목록
     $('#co-laps').innerHTML = A.laps.map((l, i) => `<tr class="${i === lapIdx ? 'sel' : ''}" data-i="${i}">
-      <td>랩 ${l.lap}</td><td>${fmt(l.time)}</td><td title="${esc(l.why.join(', '))}">${l === A.best ? '베스트' : l.valid ? sign(l.time - A.best.time, 3) : '무효 · ' + esc(l.why[0] || '')}</td><td class="traffic">${tag(l)}</td></tr>`).join('');
+      <td>랩 ${l.lap}</td><td>${fmt(l.time)}</td><td title="${esc(l.why.join(', '))}">${l === A.best ? '베스트' : l.valid ? sign(l.time - A.best.time, 3) : '기준 제외 · ' + esc(l.why[0] || '')}</td><td class="traffic">${[incTag(l), tag(l)].filter(Boolean).join(' · ')}</td></tr>`).join('');
+    // 사고·실수: 세션 전체, 손해 큰 순
+    const incs = A.incidents.slice().sort((a, b) => b.loss - a.loss);
+    $('#co-inc-box').hidden = !incs.length;
+    // 많으면 손해 큰 6건만 펼치고 나머지는 접어 둔다
+    $('#co-incidents').innerHTML = incs.map((e, n) => `<li data-n="${n}" class="${A.laps[lapIdx]?.lap === e.lap && zoomCorner === e.cornerIdx ? 'sel' : ''}" ${n >= 6 && !showAllInc ? 'hidden' : ''}>${incHtml(e, true)}</li>`).join('')
+      + (incs.length > 6 ? `<button type="button" id="co-inc-more">${showAllInc ? '접기' : `${incs.length - 6}건 더 보기`}</button>` : '');
+    $('#co-inc-more')?.addEventListener('click', () => { showAllInc = !showAllInc; render(); });
+    $('#co-incidents').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => {
+      const e = incs[+li.dataset.n];
+      lapIdx = A.laps.findIndex((l) => l.lap === e.lap);
+      zoomCorner = e.cornerIdx;
+      focusIdx = e.refIdx;
+      stopReplay(); render();
+      $('#co-zoom').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }));
     // 같이 달린 차
     $('#co-opp-box').hidden = !A.opponents.length;
     $('#co-opps').innerHTML = A.opponents.map((o) => `<tr class="${target === 'o:' + o.id ? 'sel' : ''}" data-id="${o.id}">
@@ -363,7 +372,7 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     for (const tr of $('#co-opps').querySelectorAll('tr')) tr.addEventListener('click', () => { target = target === 'o:' + tr.dataset.id ? '' : 'o:' + tr.dataset.id; stopReplay(); render(); });
     $('#co-target').innerHTML = `<option value="">코너마다 내 최고 기록</option>` + A.opponents.map((o) => `<option value="o:${o.id}">${esc(o.name)} (${esc(o.cls)}) ${fmt(o.best.time)}</option>`).join('');
     $('#co-target').value = opp ? target : '';
-    for (const tr of $('#co-laps').querySelectorAll('tr')) tr.addEventListener('click', () => { lapIdx = +tr.dataset.i; stopReplay(); render(); });
+    for (const tr of $('#co-laps').querySelectorAll('tr')) tr.addEventListener('click', () => { lapIdx = +tr.dataset.i; focusIdx = -1; stopReplay(); render(); });
     $('#co-best').textContent = fmt(A.best.time);
     $('#co-theory').textContent = fmt(A.theoretical);
     $('#co-gap').textContent = sign(A.best.time - A.theoretical, 3);
@@ -371,12 +380,13 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     const sum = sessionSummary(A).slice(0, 4);
     $('#co-summary').innerHTML = sum.map((s) => `<li><b>${s.corner}번 코너</b> 랩마다 평균 ${s.avgLoss.toFixed(2)}초 손해${s.spread > 0.1 ? `, 랩마다 편차 ${s.spread.toFixed(2)}초 (일관성 부족)` : ''}</li>`).join('');
     // 비교 랩 코칭
-    $('#co-lapname').textContent = `랩 ${lap.lap} (${fmt(lap.time)}${lap.valid ? '' : ', 무효: ' + lap.why.join(', ') + ' — 비교가 정확하지 않을 수 있습니다'})`;
+    $('#co-lapname').textContent = `랩 ${lap.lap} (${fmt(lap.time)}${lap.valid ? '' : ', 기준 계산에서 제외: ' + lap.why.join(', ')})`;
     fillReplaySelects();
     const { tips, skipped } = coachLap(A, lap, opp ? { lap: opp.best, name: opp.name } : null);
-    $('#co-tips').innerHTML = tips.length
+    const lapInc = lap.incidents.map((e) => `<li class="co-inc-tip">${incHtml(e, false)}</li>`).join('');
+    $('#co-tips').innerHTML = lapInc + (tips.length
       ? tips.slice(0, 6).map((t) => `<li><div class="tip-head"><b>${t.corner}번 코너</b><span class="loss">−${t.loss.toFixed(2)}초</span><span class="ref">기준: ${esc(t.refName)}</span></div>${t.reasons.map((r) => `<p>${r}</p>`).join('')}</li>`).join('')
-      : `<li><p>${lap === A.best && !opp ? '베스트 랩입니다. 다른 랩이나 같이 달린 차를 골라 비교하세요.' : '모든 코너에서 기준과 0.04초 이내입니다.'}</p></li>`;
+      : `<li><p>${lap === A.best && !opp ? '베스트 랩입니다. 다른 랩이나 같이 달린 차를 골라 비교하세요.' : '사고 구간을 뺀 모든 코너에서 기준과 0.04초 이내입니다.'}</p></li>`);
     $('#co-skipped').hidden = !skipped.length;
     $('#co-skipped').textContent = skipped.length ? `${skipped.join(', ')}번 코너는 다른 차와 가까이 붙어 달려서 코칭에서 뺐습니다 (막혔거나 슬립스트림을 탄 구간은 실력 비교가 안 됩니다).` : '';
     // 코너 표 (비교 랩 vs 기준). 상대가 기준이면 페달 칸 대신 속도 지표만.
@@ -408,6 +418,7 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     for (let i = 0; i < R.n; i += 3) xs.push(i);
     const pick = (arr, f = (v) => v) => xs.map((i) => f(arr[i]));
     const markers = A.corners.map((c) => ({ x: c.apex, label: String(c.id), color: '--ink-2' }));
+    for (const e of lap.incidents) markers.push({ x: e.refIdx, label: '!', color: '--drag' });
     charts.speed.set([
       { name: '베스트', color: '--front', x: xs, y: pick(R.v, (v) => v * 3.6) },
       ...(opp ? [{ name: opp.name, color: '--c2', x: xs, y: pick(opp.best.R.v, (v) => v * 3.6) }] : []),
@@ -498,6 +509,19 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
     path(null, '--front', 2);
     if (opp) path(opp.best.offset, '--c2', 2);
     if (lap && lap !== A.best) path(lap.offset, '--accent', 2.5);
+    // 사고 지점: 비교 랩 위치에 빨간 표시
+    if (lap) for (const e of lap.incidents) {
+      if (e.refIdx < a || e.refIdx > b) continue;
+      const k = e.refIdx;
+      const i0 = Math.max(0, k - 2), i1 = Math.min(R.n - 1, k + 2);
+      const tx = R.x[i1] - R.x[i0], tz = R.z[i1] - R.z[i0], tl = Math.hypot(tx, tz) || 1;
+      const o = lap.offset ? lap.offset[k] * EX : 0;
+      const [px, py] = P(R.x[k] - (tz / tl) * o, R.z[k] + (tx / tl) * o);
+      ctx.strokeStyle = css('--drag'); ctx.lineWidth = e.refIdx === focusIdx ? 4 : 3;
+      ctx.beginPath(); ctx.moveTo(px - 7, py - 7); ctx.lineTo(px + 7, py + 7); ctx.moveTo(px + 7, py - 7); ctx.lineTo(px - 7, py + 7); ctx.stroke();
+      ctx.fillStyle = css('--drag'); ctx.textAlign = 'left'; ctx.font = `600 11px ${css('--font-data')}`;
+      ctx.fillText(e.name, px + 10, py + 4);
+    }
     // 턴인·꼭짓점·탈출 표시 (기준 랩 위)
     ctx.font = `600 11px ${css('--font-data')}`;
     ctx.fillStyle = css('--ink');
@@ -521,12 +545,10 @@ export function createCoach({ root, getCar, getCarId, getEnv }) {
   // ---------- 컨트롤 ----------
   $('#co-live-btn').addEventListener('click', connect);
   $('#co-file').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ''; });
-  $('#co-demo').addEventListener('click', demo);
   $('#co-play').addEventListener('click', toggleReplay);
   $('#co-target').addEventListener('change', (e) => { target = e.target.value; stopReplay(); render(); });
   $('#co-zoom-corner').addEventListener('change', (e) => { zoomCorner = +e.target.value; drawZoom(); });
   new ResizeObserver(() => { if (A) drawZoom(); }).observe(zoom.parentElement);
-  $('#co-demo-track').innerHTML = Object.entries(TRACKS).filter(([id]) => id !== 'oval').map(([id, t]) => `<option value="${id}">${t.name}</option>`).join('');
   new ResizeObserver(() => { setupMap(); drawMap(); }).observe(map.parentElement);
 
   return {

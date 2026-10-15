@@ -243,6 +243,11 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
 .co-zoombox canvas { width: 100%; display: block; }
 .co-laps td.traffic, .co-tag { color: var(--warn); font-size: 12px; }
 #co-opps td:first-child { white-space: nowrap; }
+body[data-tab="coach"] aside.setup, body[data-tab="coach"] header.top .env, body[data-tab="coach"] .bench-head { display: none; }
+body[data-tab="coach"] .layout { grid-template-columns: minmax(0, 1fr); }
+.co-inc li { border-left-color: var(--drag); cursor: pointer; }
+.co-inc li.sel { background: var(--grid); }
+.co-inc .meta { color: var(--ink-2); font-size: 12px; }
 .co-help { border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; background: var(--panel); }
 .co-help ol { margin: 8px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .co-help p { margin: 0; }
@@ -401,16 +406,14 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
     </section>
 
     <section class="tabpanel" id="tab-coach" role="tabpanel" hidden>
-      <p class="lede">르망 얼티밋에서 달린 주행을 분석합니다. 랩을 나누고 코너를 자동으로 찾은 다음, 코너마다 가장 빨랐던 랩과 비교해 어디서 왜 시간을 잃었는지 알려줍니다.</p>
+      <p class="lede">르망 얼티밋에서 달린 주행을 분석합니다. 코너마다 가장 빨랐던 랩과 비교해 어디서 왜 시간을 잃었는지, 스핀·이탈·충돌은 왜 났는지 알려줍니다.</p>
       <div class="controls">
         <button id="co-live-btn" type="button">실시간 연결</button>
         <label for="co-port">포트 <input id="co-port" type="number" value="8770" step="1"></label>
         <label class="file-btn" for="co-file">기록 파일 열기 (.jsonl)<input id="co-file" type="file" accept=".jsonl,.json,.txt"></label>
-        <label for="co-demo-track">데모 <select id="co-demo-track"></select></label>
-        <button id="co-demo" type="button">데모 세션 만들기</button>
         <label for="co-voice"><input id="co-voice" type="checkbox"> 주행 중 음성 안내</label>
       </div>
-      <p class="note" id="co-status">게임 없이 보려면 "데모 세션 만들기"를 누르세요. 지금 고른 차로 가상 트랙을 6바퀴 돌며, 일부 코너에서 일부러 실수를 섞습니다.</p>
+      <p class="note" id="co-status">게임에서 트랙에 나간 뒤 "실시간 연결"을 누르거나, 지난 주행 기록(.jsonl)을 여세요.</p>
       <div class="co-live" id="co-live" hidden>
         <div><span>속도</span><b id="co-live-speed">0</b><small>km/h</small></div>
         <div><span>기어</span><b id="co-live-gear">N</b></div>
@@ -442,6 +445,10 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
           <div class="table-wrap"><table class="co-laps"><tbody id="co-laps"></tbody></table></div>
           <h3 class="eyebrow">세션 전체에서 손해가 큰 코너</h3>
           <ol class="co-summary" id="co-summary"></ol>
+          <div id="co-inc-box" hidden>
+            <h3 class="eyebrow">사고·실수 분석 <span class="hint">(눌러서 그 랩·코너로)</span></h3>
+            <ol class="co-tips co-inc" id="co-incidents"></ol>
+          </div>
           <div id="co-opp-box" hidden>
             <h3 class="eyebrow">같이 달린 차 <span class="hint">(눌러서 비교 기준으로)</span></h3>
             <div class="table-wrap"><table class="co-laps"><tbody id="co-opps"></tbody></table></div>

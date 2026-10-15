@@ -70,12 +70,40 @@ test('실제 기록의 이상한 랩: 차고 복귀·세션 재시작·느린 �
   assert.ok(!B.error, B.error);
   const l3 = B.laps.find((l) => l.lap === 3);
   assert.ok(!l3 || !l3.valid);
+  // 멈춘 랩은 버리지 않고 사고로 분석한다
   const l5 = B.laps.find((l) => l.lap === 5);
-  assert.ok(l5 && !l5.valid && l5.why.some((w) => /느림/.test(w)), JSON.stringify(l5?.why));
+  assert.ok(l5 && l5.incidents.some((e) => e.loss > 30), JSON.stringify(l5?.incidents?.map((e) => [e.name, e.loss])));
+  assert.notEqual(B.best, l5);
   // 손해·편차가 말이 되는 범위
   for (const c of sessionSummary(B)) {
     assert.ok(c.avgLoss < 2, `${c.corner}번 평균 손해 ${c.avgLoss}`);
     assert.ok(c.spread < 2, `${c.corner}번 편차 ${c.spread}`);
   }
   assert.ok(B.best.time > 80 && B.best.time < 110);
+});
+
+test('스핀: 버리지 않고 직전 조작에서 원인을 찾는다 (스로틀을 급하게 연 탈출)', () => {
+  const S = D.samples.map((s) => ({ ...s, slip: 0.5, wr: [100, 100, 100, 100] }));
+  const L6 = S.filter((s) => s.lap === 6);
+  // 6랩에서 조향이 크고 스로틀이 낮은 탈출 지점
+  let on = L6.findIndex((s, i) => i > 200 && Math.abs(s.steer) > 0.3 && s.thr < 0.5 && s.v > 20);
+  on = S.indexOf(L6[on]);
+  for (let k = 1; k <= 12; k++) { S[on - 12 + k].thr = 0.2 + (0.8 * k) / 12; }
+  for (let k = 0; k < 120; k++) {
+    const x = S[on + k];
+    x.slip = Math.min(150, k * 2);
+    x.thr = 1;
+    x.v = Math.max(3, x.v * (1 - k / 100));
+    x.wr = [100, 100, 125, 125];
+  }
+  const B = analyzeSession(S);
+  const l6 = B.laps.find((l) => l.lap === 6);
+  const e = l6.incidents.find((x) => x.kind === 'spin');
+  assert.ok(e, JSON.stringify(l6.incidents.map((x) => x.name)));
+  const txt = e.causes.join(' ');
+  assert.ok(/스로틀을 \d+%→\d+%로 빠르게/.test(txt), txt);
+  assert.ok(/휠스핀/.test(txt), txt);
+  // 사고 코너는 평균 계산에서 빠지고, 나머지 코너는 그대로 쓰인다
+  assert.ok(l6.bad[e.cornerIdx]);
+  assert.ok(l6.bad.some((b) => !b));
 });

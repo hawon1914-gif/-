@@ -295,6 +295,7 @@ class GameReader:
         self.last_find = 0
         self.count = 0
         self.note = ''
+        self.last_impact = None
 
     def _find(self):
         # 내장 LMU_Data를 먼저 찾고, 없으면 예전 플러그인 방식
@@ -351,7 +352,23 @@ class GameReader:
             'pit': bool(ps.mInPits or ps.mInGarageStall),
             # 누가 운전 중인가 (0 나, 1 AI, 2 원격, 3 리플레이)·게임의 랩 인정 (2 = 기록 인정)
             'ctrl': ps.mControl, 'cnt': ps.mCountLapFlag,
+            # 사고 분석용 차체 거동. rF2 차체 좌표: +x 왼쪽, +y 위, +z 뒤.
+            # slip: 차가 향한 방향과 실제 진행 방향의 각도(도), yaw: 회전 속도(도/초), gx·gy: 가감속·횡 G
+            'slip': round(math.degrees(math.atan2(vel.x, -vel.z)), 1) if abs(vel.z) + abs(vel.x) > 3 else 0.0,
+            'yaw': round(math.degrees(t.mLocalRot.y), 1),
+            'gx': round(-t.mLocalAccel.z / 9.81, 2), 'gy': round(t.mLocalAccel.x / 9.81, 2),
+            # 바퀴 회전 속도(rad/s, 앞왼·앞오·뒤왼·뒤오)와 미끄러지는 접지면 비율(0~1): 잠김·휠스핀 판단
+            'wr': [round(abs(w.mRotation), 1) for w in wheels],
+            'grip': [round(w.mGripFract, 2) for w in wheels],
         }
+        # 충격: 게임이 마지막 충격 시각·세기를 준다. 새 충격일 때만 넣는다.
+        # 브리지를 켜기 전의 충격은 무시한다 (처음 읽은 값을 기준으로).
+        if self.last_impact is None:
+            self.last_impact = t.mLastImpactET
+        elif t.mLastImpactET != self.last_impact:
+            self.last_impact = t.mLastImpactET
+            if t.mLastImpactET > 0:
+                sample['imp'] = round(t.mLastImpactMagnitude, 1)
         if self.count % 3 == 0:
             cars = self._others(snap, t.mID)
             if cars:

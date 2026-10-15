@@ -554,6 +554,8 @@ function scheduleUpdate() {
 
 function update() {
   $('car-name').textContent = state.car.name;
+  // 코칭 탭에서는 셋업 시트·환경·차 이름처럼 코칭과 관계없는 것을 숨긴다 (CSS)
+  document.body.dataset.tab = state.tab;
   tunnel?.setVisible(state.tab === 'tunnel');
   drive?.setVisible(state.tab === 'drive');
   coach?.setVisible(state.tab === 'coach');
