@@ -525,6 +525,21 @@ function ensureDrive() {
     .finally(() => { driveLoading = false; });
 }
 
+// ---------- 코칭 ----------
+
+let coach = null;
+let coachLoading = false;
+function ensureCoach() {
+  if (coach || coachLoading) return;
+  coachLoading = true;
+  import('./coach-ui.js')
+    .then(({ createCoach }) => {
+      coach = createCoach({ root: $('tab-coach'), getCar: () => state.car, getCarId: () => state.carId, getEnv: () => state.env });
+      coach.setVisible(state.tab === 'coach');
+    })
+    .finally(() => { coachLoading = false; });
+}
+
 // ---------- 갱신 ----------
 
 let timer = null;
@@ -541,8 +556,10 @@ function update() {
   $('car-name').textContent = state.car.name;
   tunnel?.setVisible(state.tab === 'tunnel');
   drive?.setVisible(state.tab === 'drive');
+  coach?.setVisible(state.tab === 'coach');
   if (state.tab === 'tunnel') ensureTunnel();
   else if (state.tab === 'drive') ensureDrive();
+  else if (state.tab === 'coach') ensureCoach();
   else if (state.tab === 'sweep') runSweep();
   else if (state.tab === 'braking') runBraking();
   else if (state.tab === 'slip') runSlip();
@@ -561,6 +578,7 @@ const redraw = () => {
   drawReplay();
   tunnel?.themeChanged();
   drive?.themeChanged();
+  coach?.themeChanged();
 };
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
 new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
