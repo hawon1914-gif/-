@@ -553,7 +553,8 @@ function watchBridge() {
     if (busy || coach?.isLive() || coach?.autoBlocked() || storageGet('aerolab-autolive') === '0') return;
     busy = true;
     try {
-      const port = +(storageGet('aerolab-port') || 8770);
+      // 브리지가 띄운 페이지면 그 브리지의 포트, 파일로 연 페이지면 마지막에 쓴 포트
+      const port = location.protocol.startsWith('http') && location.port ? +location.port : +(storageGet('aerolab-port') || 8770);
       const r = await fetch(`http://127.0.0.1:${port}/status`, { cache: 'no-store' });
       const st = await r.json();
       if (st.connected) {

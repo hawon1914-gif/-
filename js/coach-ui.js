@@ -1,6 +1,7 @@
 // 코칭 탭: 실시간 연결(브리지)·기록 파일 → 기준 랩(세션 최고) 비교, 지도·고스트·미니맵, 개선할 것, 사고 분석, 브레이킹 구간
 import { analyzeSession, coachLap, sessionSummary, cornerMetrics, cornerReasons, speedMetrics, speedReasons, defaultReference, externalCandidates, referenceCandidates, FIX } from './coach.js';
 import { LineChart } from './chart.js';
+import { findShape, alignShape, makeBins, addBin, binsToObs, layoutFromBins, cornersFromShape } from './track-maps.js';
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888';
 const fmt = (t) => {
@@ -44,7 +45,9 @@ export function createCoach({ root }) {
   let sessionName = '';
   let visible = false;
   let liveInfo = null;
-  let liveLayout = null; // 실시간: 저장된 트랙 레이아웃
+  let liveLayout = null; // 실시간: 트랙 지도 (저장된 것, 실제 서킷 모양을 맞춘 것, 주행 위치로 만든 것)
+  let liveShape = null; // 이 트랙의 실제 서킷 모양 (아직 게임 좌표에 맞추기 전)
+  let liveBins = null; // 랩 거리별로 모은 나·다른 차 위치
 
   const status = (t) => { $('#co-status').textContent = t; };
   const ref = () => (A ? A.refs.find((c) => c.key === refKey && c.lap) || defaultReference(A) : null);
@@ -61,7 +64,7 @@ export function createCoach({ root }) {
     const port = +$('#co-port').value || 8770;
     try { localStorage.setItem('aerolab-port', String(port)); } catch { /* 무시 */ }
     samples = [];
-    A = null; N = null; refKey = ''; extraRefs = [];
+    A = null; N = null; refKey = ''; extraRefs = []; liveLayout = null; liveShape = null; liveBins = null;
     live = { lapStartT: null, lap: null, dist: 0, last: null, prev: null, cornerSpoken: new Set(), cars: null, carsPrev: new Map(), carsT: 0, trafficIdx: -1 };
     es = new EventSource(`http://127.0.0.1:${port}/stream`);
     $('#co-live-btn').textContent = '연결 끊기';
@@ -73,7 +76,9 @@ export function createCoach({ root }) {
         first = false;
         sessionName = `${s.track || '트랙'} · ${s.car || ''}`;
         liveLayout = store.get('aerolab.layout.' + (s.track || ''));
-        status(`연결됨: ${sessionName}${liveLayout ? '' : ' · 이 트랙은 처음이라 한 바퀴를 돌면 지도가 완성됩니다'}`);
+        liveShape = liveLayout ? null : findShape(s.track);
+        liveBins = s.trackLen > 100 ? makeBins(s.trackLen) : null;
+        status(`연결됨: ${sessionName}${liveLayout ? '' : liveShape ? ' · 트랙 지도를 띄웠습니다. 달리기 시작하면 몇 초 안에 위치가 맞춰집니다' : ' · 이 트랙은 지도 데이터가 없어 나와 다른 차가 지나간 위치로 지도를 만듭니다'}`);
         $('#co-live').hidden = false;
         setupMap();
       }
@@ -192,7 +197,7 @@ export function createCoach({ root }) {
     return f;
   }
 
-  function drawTrack(ctx, L, xf, { compact = false } = {}) {
+  function drawTrack(ctx, L, xf, { compact = false, noStart = false } = {}) {
     const n = L.x.length;
     const P = (i) => xf(L.x[(i + n) % n], L.z[(i + n) % n]);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -223,6 +228,7 @@ export function createCoach({ root }) {
         ctx.fillText(label, px + nx * (r + 9), py + ny * (r + 9));
       }
     };
+    if (noStart) return;
     tick(0, 'S/F', css('--ink'));
     (L.sectors || []).forEach((i, k) => tick(i, `S${k + 2}`, css('--c2')));
     // 진행 방향 화살표 (결승선 조금 뒤)
@@ -311,9 +317,20 @@ export function createCoach({ root }) {
     const h = Math.round(Math.min(460, Math.max(300, w * 0.7)));
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     map.width = w * dpr; map.height = h * dpr; map.style.height = h + 'px';
-    const L = currentLayout();
+    const L = currentLayout() || previewLayout();
     const pts = N ? N.samples.filter((x) => !x.pit && x.v > 1) : samples.filter((x) => !x.pit && x.v > 1);
     mapXf = L || pts.length ? fitter(L, pts, w, h, 52) : null;
+  }
+  // 위치를 맞추기 전의 실제 서킷 모양 (차 위치는 아직 못 그린다)
+  let preview = null;
+  function previewLayout() {
+    if (A || !live || liveLayout || !liveShape) return null;
+    if (preview?.shape !== liveShape) {
+      const p = liveShape.pts, x = [], z = [];
+      for (let i = 0; i < p.length; i += 2) { x.push(p[i]); z.push(p[i + 1]); }
+      preview = { shape: liveShape, layout: { x, z, step: 5, corners: [], preview: true } };
+    }
+    return preview.layout;
   }
 
   function drawMap(extra = {}) {
@@ -323,6 +340,13 @@ export function createCoach({ root }) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     if (!mapXf) return;
+    const P = previewLayout();
+    if (P) {
+      drawTrack(ctx, P, mapXf, { noStart: true });
+      ctx.fillStyle = css('--ink-2'); ctx.font = `12px ${css('--font-body')}`; ctx.textAlign = 'center';
+      ctx.fillText(`${liveShape.name} · 달리기 시작하면 위치를 맞춥니다`, W / 2, 30);
+      return;
+    }
     const L = currentLayout();
     if (L) drawTrack(ctx, L, mapXf);
     else drawPath(ctx, N ? N.samples : samples);
@@ -382,6 +406,8 @@ export function createCoach({ root }) {
     if (L.lap !== s.lap) {
       const finished = L.lap !== null;
       L.lap = s.lap; L.lapStartT = s.t; L.dist = 0; L.cornerSpoken = new Set(); L.trafficIdx = -1;
+      // 랩 시간은 결승선을 처음 넘은 뒤부터 잰다 (세션 시작 대기·피트 출발·아웃랩은 재지 않는다)
+      if (finished) L.timing = true;
       // 랩이 끝날 때마다 세션을 다시 분석
       if (finished) { analyze(true); setupMap(); }
     }
@@ -391,7 +417,9 @@ export function createCoach({ root }) {
     const t = s.t - L.lapStartT;
     $('#co-live-speed').textContent = (s.v * 3.6).toFixed(0);
     $('#co-live-gear').textContent = s.gear <= 0 ? (s.gear < 0 ? 'R' : 'N') : s.gear;
-    $('#co-live-lap').textContent = fmt(t);
+    $('#co-live-lap').textContent = L.timing ? fmt(t) : '–';
+    $('#co-live-lap').title = L.timing ? '' : '결승선을 넘으면 재기 시작합니다';
+    buildLiveMap(s);
     $('#co-live-thr').style.width = `${(s.thr * 100).toFixed(0)}%`;
     $('#co-live-brk').style.width = `${(s.brk * 100).toFixed(0)}%`;
     if (s.cars) {
@@ -409,7 +437,10 @@ export function createCoach({ root }) {
     const me = { x: s.x, z: s.z, wx: prevPos ? s.x - prevPos.x : 0, wz: prevPos ? s.z - prevPos.z : 0 };
     let ghost = null, d = null;
     const RF = refR();
-    if (!A && liveLayout?.t) {
+    if (!L.timing) {
+      $('#co-live-delta').textContent = '–';
+      $('#co-live-delta').className = '';
+    } else if (!A && liveLayout?.t) {
       // 아직 완주 랩이 없으면 저장된 기준 랩(지난 기록)과 비교
       const LL = liveLayout, n = LL.x.length;
       const len = s.trackLen || LL.len;
@@ -420,7 +451,7 @@ export function createCoach({ root }) {
       ghost = { layout: lo };
       showDelta(d, `${LL.refWho} ${fmt(LL.refTime)} 대비`);
     }
-    if (A && RF) {
+    if (A && RF && L.timing) {
       // 지금 위치를 기준 축의 칸으로: 게임의 랩 거리가 있으면 그것, 없으면 이번 랩 주행 거리
       const len = s.trackLen || A.ref.length;
       const idx = Math.min(A.ref.n - 1, Math.max(0, Math.floor(((Number.isFinite(s.lapDist) ? s.lapDist : L.dist) / len) * A.ref.n)));
@@ -448,6 +479,25 @@ export function createCoach({ root }) {
       drawMap({ me: { ...me, h: L.h }, ghost: ghostPos(ghost, mapXf), cars });
     }
     drawMini(s, me, ghost, d);
+  }
+
+  // 실시간 트랙 지도: 저장된 게 없으면 나·다른 차 위치를 모아 실제 서킷 모양에 맞추거나, 위치만으로 지도를 만든다
+  function buildLiveMap(s) {
+    if (liveLayout || !liveBins) return;
+    if (!s.pit && s.v > 3) addBin(liveBins, s.x, s.z, s.lapDist);
+    if (s.cars) for (const o of s.cars) if (!o.pit && o.v > 3) addBin(liveBins, o.x, o.z, o.ld);
+    if (samples.length % 30) return;
+    let L = null;
+    if (liveShape) L = alignShape(liveShape, binsToObs(liveBins), liveBins.len)?.layout || null;
+    if (!L) L = layoutFromBins(liveBins);
+    if (!L) return;
+    L.corners = cornersFromShape(L);
+    L.track = s.track; L.len = liveBins.len; L.sectors = []; L.brake = [];
+    liveLayout = L;
+    liveShape = null;
+    store.set('aerolab.layout.' + s.track, L);
+    status(`${sessionName} · 트랙 지도 완성 (${L.source})`);
+    setupMap();
   }
 
   function showDelta(d, name) {
@@ -676,20 +726,10 @@ export function createCoach({ root }) {
       if (info.cls) items.push(['클래스', info.cls]);
       if (Number.isFinite(info.air)) items.push(['기온 / 노면', `${info.air.toFixed(0)}°C / ${info.trackT.toFixed(0)}°C`]);
       if (Number.isFinite(info.rain)) items.push(['비 / 젖음', `${Math.round(info.rain * 100)}% / ${Math.round(info.wet * 100)}%`]);
-      if (Number.isFinite(info.wind)) items.push(['바람', `${info.wind.toFixed(1)} m/s`]);
-      if (Number.isFinite(info.fuel)) items.push(['연료', `${info.fuel.toFixed(1)} / ${info.fuelCap.toFixed(0)} L`]);
-      if (Number.isFinite(info.bias)) items.push(['브레이크 밸런스', `앞 ${(info.bias * 100).toFixed(1)}%`]);
-      if (Number.isFinite(info.dfF)) items.push(['다운포스 앞/뒤', `${info.dfF} / ${info.dfR} N`]);
-      if (Number.isFinite(info.rhF)) items.push(['라이드하이트 앞/뒤', `${info.rhF} / ${info.rhR} mm`]);
-      if (info.press) items.push(['타이어 압력', info.press.map((p) => p.toFixed(0)).join(' · ') + ' kPa']);
-      if (info.brakeT) items.push(['브레이크 온도', info.brakeT.map((p) => p.toFixed(0)).join(' · ') + ' °C']);
-      if (Number.isFinite(info.water)) items.push(['냉각수 / 오일', `${info.water.toFixed(0)} / ${info.oil.toFixed(0)} °C`]);
     }
-    const tire = [...(A?.best.samples || N?.samples || samples)].reverse().find((x) => x.tire && x.tire.every((v) => v > -200))?.tire;
-    if (tire) items.push(['타이어 온도', tire.map((v) => v.toFixed(0)).join(' · ') + ' °C']);
     $('#co-info').hidden = !items.length;
     $('#co-info').innerHTML = items.map(([k, v]) => `<div>${k} <b>${esc(v)}</b></div>`).join('')
-      + (!info && items.length ? '<div>날씨·차 상태는 새 브리지로 기록한 주행부터 나옵니다</div>' : '');
+      + '';
   }
 
   // ---------- 사고 ----------
@@ -1040,7 +1080,7 @@ export function createCoach({ root }) {
   // 게임 자동 연결 (기본 켜짐): 브리지가 게임 데이터를 보내기 시작하면 이 탭으로 넘어와 바로 연결한다
   try {
     $('#co-auto').checked = localStorage.getItem('aerolab-autolive') !== '0';
-    $('#co-port').value = localStorage.getItem('aerolab-port') || $('#co-port').value;
+    $('#co-port').value = (location.protocol.startsWith('http') && location.port) || localStorage.getItem('aerolab-port') || $('#co-port').value;
   } catch { /* 무시 */ }
   $('#co-auto').addEventListener('change', (e) => { autoBlocked = false; try { localStorage.setItem('aerolab-autolive', e.target.checked ? '1' : '0'); } catch { /* 무시 */ } });
   $('#co-file').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ''; });
