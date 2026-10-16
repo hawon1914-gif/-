@@ -285,6 +285,7 @@ function explain(S, g, cal, ref, hasSlip) {
     for (let j = on + 1; j <= e; j++) if (S[j]._seg === s0._seg && Number.isFinite(S[j]._h) && Number.isFinite(S[j - 1]._h)) turned += wrap(S[j]._h - S[j - 1]._h);
   }
   if (g.endedAfter) add(0.5, 'ended', '직후 기록 끊김', '', '직후 기록이 끊겼습니다 (차고로 돌아가거나 리셋한 것으로 보입니다).');
+  const recoveryTips = g.kind === 'spin' || g.kind === 'off' || g.kind === 'impact' ? recoveryAdvice(S, on, g, cal, hasSlip) : [];
   causes.sort((a, b) => b.w - a.w);
   const guessed = g.items.every((e) => e.guessed) && g.kind === 'impact';
   const name = { spin: hasSlip ? '스핀' : '스핀 (위치로 추정)', off: '트랙 이탈', wide: '트랙 밖으로 밀림', impact: guessed ? '충돌 (추정)' : '충돌', stop: '트랙 위 정지' }[g.kind];
@@ -294,10 +295,92 @@ function explain(S, g, cal, ref, hasSlip) {
     x: s0.x, z: s0.z, recovery: g.recovered ? g.recovered - s0.t : null, extra: g.items.length,
     // 원인: 짧은 이름(label)·고칠 점(fix)·자세한 설명(text). 정보성 항목(입력 없음·충돌 등)은 fix가 비어 있다.
     reasons: causes.slice(0, 4),
+    recoveryTips,
     causes: causes.length ? causes.slice(0, 4).map((c) => c.text)
       : ['기록된 데이터(페달·조향·속도·위치)에서는 원인을 찾지 못했습니다. 노면·연석처럼 기록되지 않는 요인일 수 있고, 저도 원인을 모르겠습니다.'],
     evidence: hasSlip ? '' : '이 기록에는 차체 미끄러짐 각도·바퀴 회전이 없어(이전 브리지) 위치·페달·조향으로만 판단했습니다.',
   };
+}
+
+// 스핀·이탈 뒤 회복: 흐트러진 순간부터 다시 달릴 때까지 무엇을 했고, 무엇을 했어야 빨리 돌아왔나
+// 반환: [{ label, fix, good }]  (good이면 잘한 점)
+function recoveryAdvice(S, on, g, cal, hasSlip) {
+  const out = [];
+  const seg = S[on]._seg, t0 = S[on].t;
+  const end = (() => { let j = on; while (j < S.length - 1 && S[j + 1]._seg === seg && S[j + 1].t - t0 < 25) j++; return j; })();
+  const W = S.slice(on, end + 1);
+  if (W.length < 10) return out;
+  // 미끄러지는 방향: 슬립 각도가 있으면 그 부호, 없으면 진행 방향이 도는 방향
+  const rotSign = (x) => (hasSlip ? Math.sign(x.slip || 0) : Math.sign(x._hr || 0));
+  // 1) 카운터스티어: 미끄러지는 쪽으로 핸들을 돌렸나, 얼마나 빨리
+  if (g.kind === 'spin' || W.slice(0, 60).some((x) => (hasSlip ? Math.abs(x.slip) > 10 : Math.abs(x._hr) > 0.9))) {
+    const dir = rotSign(W.find((x) => rotSign(x) !== 0) || W[0]);
+    const counter = (x) => Number.isFinite(x.steer) && (hasSlip ? x.steer * cal.steerSign * dir > 0.15 : x.steer * cal.steerSign * dir < -0.15);
+    const k = W.findIndex((x, i) => i > 0 && x.t - t0 < 1.5 && counter(x));
+    if (k < 0) out.push({ label: '카운터스티어 없음', fix: '미끄러지는 쪽으로 바로 핸들을 돌리기' });
+    else {
+      const rt = W[k].t - t0;
+      if (rt > 0.35) out.push({ label: `카운터스티어 ${rt.toFixed(1)}초 늦음`, fix: '뒤가 흐르는 순간 바로 반대로 (0.3초 안에)' });
+      else out.push({ label: `카운터스티어 ${rt.toFixed(1)}초`, good: true });
+      // 과하게 잡아 반대로 튕겼나: 미끄러짐 방향이 바뀜
+      const flip = W.slice(k, k + 120).find((x) => rotSign(x) === -dir && (hasSlip ? Math.abs(x.slip) > 10 : Math.abs(x._hr) > 0.9));
+      if (flip) out.push({ label: '반대로 튕김', fix: '차가 돌아오기 시작하면 핸들을 빨리 풀기' });
+    }
+  }
+  // 2) 미끄러지는 동안 스로틀
+  const early = W.filter((x) => x.t - t0 < 1);
+  const thr0 = Math.max(...W.slice(0, 6).map((x) => x.thr ?? 0));
+  const dropAt = early.findIndex((x) => (x.thr ?? 0) < 0.1);
+  if (thr0 > 0.5 && dropAt >= 0 && early[dropAt].t - t0 < 0.25) out.push({ label: '스로틀 급히 뗌', fix: '완전히 떼지 말고 20~40% 유지 (뒤가 더 가벼워진다)' });
+  else if (early.length && early.every((x) => (x.thr ?? 0) > 0.8)) out.push({ label: '스로틀 계속 밟음', fix: '절반 정도로 줄여 뒤 타이어 그립 회복' });
+  // 3) 크게 돈 뒤(90° 넘게): 양발 브레이크로 그 자리에 세웠나
+  // 코너를 도는 회전과 구분하려고: 스핀일 때만, 슬립 70° 초과 또는 1.5초 안에 진행 방향이 90° 넘게 꺾이며 감속한 경우
+  let turned = 0, gone = -1;
+  if (g.kind === 'spin') for (let i = 1; i < W.length && W[i].t - t0 < 1.5; i++) {
+    if (Number.isFinite(W[i]._h) && Number.isFinite(W[i - 1]._h)) turned += Math.abs(wrap(W[i]._h - W[i - 1]._h));
+    if (gone < 0 && ((hasSlip && Math.abs(W[i].slip) > 70) || (!hasSlip && turned > Math.PI / 2 && W[i]._gx < -0.3))) gone = i;
+  }
+  if (gone >= 0 && W[gone].v > 3) {
+    const b = W.slice(gone).findIndex((x) => (x.brk ?? 0) > 0.8);
+    const late = b < 0 ? null : W[gone + b].t - W[gone].t;
+    if (late === null || late > 0.6) out.push({ label: late === null ? '돈 뒤 브레이크 안 밟음' : `돈 뒤 브레이크 ${late.toFixed(1)}초 늦음`, fix: '90° 넘게 돌면 브레이크 끝까지 + 클러치 (양발) → 그 자리에 멈추기' });
+    else out.push({ label: '돈 뒤 바로 제동', good: true });
+    if (W.slice(gone).some((x) => (x.thr ?? 0) > 0.5 && x.v > 3 && x.t - W[gone].t < 2)) out.push({ label: '돌고 있는데 가속', fix: '차가 멈출 때까지 스로틀 떼기' });
+  }
+  // 4) 시동 꺼짐
+  if (W.some((x) => x.rpm !== undefined && x.rpm < 300 && x.v < 2)) out.push({ label: '시동 꺼짐', fix: '돌 때 클러치를 밟아 시동 유지' });
+  // 5) 다시 출발: 멈춘 시간과 후진
+  const stopI = W.findIndex((x) => x.v < 1);
+  if (stopI >= 0) {
+    const goI = W.findIndex((x, i) => i > stopI && x.v > 5 && x.gear > 0);
+    const rev = W.slice(stopI).some((x) => x.gear < 0);
+    if (goI > 0) {
+      const wait = W[goI].t - W[stopI].t;
+      if (wait > 6) out.push({ label: `멈춘 뒤 ${wait.toFixed(0)}초 만에 출발`, fix: rev ? '후진은 짧게, 1단 넣고 바로 출발' : '1단 넣고 바로 출발 (안전하면)' });
+      // 복귀할 때 뒤에서 오는 차
+      const car = nearestBehind(S, on + goI);
+      if (car && car.d < 150) out.push({ label: `복귀 때 뒤 ${car.d.toFixed(0)} m에 ${car.n || '다른 차'}`, fix: '오는 차를 보내고 트랙 가장자리로 나란히 합류' });
+    } else if (W[W.length - 1].v < 1) out.push({ label: '다시 출발 못 함', fix: '' });
+  }
+  return out;
+}
+
+// 내 뒤에서 다가오는 가장 가까운 차 (랩 거리로)
+function nearestBehind(S, i) {
+  const s = S[i];
+  for (let j = i; j >= Math.max(0, i - 30); j--) {
+    const cs = S[j].cars;
+    if (!cs || !Number.isFinite(s.lapDist) || !s.trackLen) continue;
+    let best = null;
+    for (const o of cs) {
+      if (o.pit || !Number.isFinite(o.ld) || o.v < 15) continue;
+      let d = (s.lapDist - o.ld + s.trackLen) % s.trackLen;
+      if (d > s.trackLen / 2) continue;
+      if (!best || d < best.d) best = { d, n: o.n };
+    }
+    return best;
+  }
+  return null;
 }
 
 function nearestCar(S, i) {

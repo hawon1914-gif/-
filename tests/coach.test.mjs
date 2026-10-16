@@ -166,3 +166,27 @@ test('코너 가이드: 제동 시점·기어·코너 속도, TC/ABS 개입과 �
   const t = guideText(guide.find((g) => g.abs));
   assert.match(t.aids, /ABS \d+ m 개입.*→ 처음 브레이크 \d+%를 \d+% 정도로/);
 });
+
+test('스핀 회복: 카운터스티어 반응·스로틀·양발 브레이크·재출발을 평가한다', () => {
+  const S = D.samples.map((s) => ({ ...s, slip: 0.5 }));
+  const L6 = S.filter((s) => s.lap === 6);
+  const on = S.indexOf(L6[L6.findIndex((s, i) => i > 200 && Math.abs(s.steer) > 0.3 && s.thr < 0.5 && s.v > 20)]);
+  const base = S[on];
+  // 늦은 카운터(0.6초), 스로틀 계속, 크게 돈 뒤 브레이크 없음, 8초 멈췄다 출발
+  const spin = [];
+  for (let k = 0; k < 60 * 12; k++) {
+    const tt = k / 60;
+    const v = tt < 2 ? Math.max(0.5, base.v * (1 - tt / 2)) : tt < 10 ? 0 : 8;
+    spin.push({ ...base, t: base.t + tt, slip: tt < 2 ? Math.min(150, k * 1.5) : 0, steer: tt < 0.6 ? base.steer : -base.steer * 2, thr: tt < 1.5 ? 1 : tt < 10 ? 0 : 0.6, brk: 0, v, gear: tt < 10 ? 2 : 1, cars: undefined,
+      x: base.x + (tt < 2 ? tt * 3 : 6), z: base.z + (tt < 2 ? Math.sin(tt) * 4 : 4) });
+  }
+  for (let i = on; i < S.length; i++) S[i].t += 12;
+  S.splice(on, 0, ...spin);
+  const B = analyzeSession(S);
+  const e = B.incidents.find((x) => x.kind === 'spin' && x.lap === 6);
+  assert.ok(e, JSON.stringify(B.incidents.map((x) => [x.lap, x.kind])));
+  const labels = e.recoveryTips.map((r) => r.label).join(' / ');
+  assert.match(labels, /스로틀 계속 밟음/);
+  assert.match(labels, /돈 뒤 브레이크 안 밟음|돈 뒤 브레이크 .*늦음/);
+  assert.match(labels, /멈춘 뒤 \d+초 만에 출발/);
+});

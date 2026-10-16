@@ -42,6 +42,7 @@ export function createCoach({ root }) {
   let lapIdx = -1; // 비교 랩
   let selInc = null;
   let zoomCorner = 0;
+  let zoomView = null; // 코너 라인 확대 { k, dx, dy }
   let showAllInc = false;
   let sessionName = '';
   let visible = false;
@@ -772,6 +773,7 @@ export function createCoach({ root }) {
     return `<div class="row1"><b>${num ? `${num}. ` : ''}${withLap ? `랩 ${e.lap} · ` : ''}${e.corner ? `${e.corner}번 코너` : Number.isFinite(e.lapDist) ? `${e.lapDist.toFixed(0)} m 지점` : ''}</b>
       <span>${esc(e.name.replace(/ \(.*\)/, ''))}</span>${e.loss > 0.05 ? `<span class="loss">−${e.loss.toFixed(2)}초</span>` : ''}
       ${rs.slice(0, 3).map((r) => `<span class="co-chip">${esc(r.label)}</span>`).join('')}${fix ? ` → <span class="fix">${esc(fix)}</span>` : ''}</div>
+      ${(e.recoveryTips || []).length ? `<div class="row1 rec"><b>회복</b>${e.recoveryTips.map((r) => `<span class="co-chip ${r.good ? 'good' : ''}">${esc(r.label)}</span>${r.fix ? ` → <span class="fix">${esc(r.fix)}</span>` : ''}`).join(' ')}</div>` : ''}
       <details><summary>자세히</summary>${e.causes.map((c) => `<p>${esc(c)}</p>`).join('')}${e.evidence ? `<p>${esc(e.evidence)}</p>` : ''}</details>`;
   };
   function renderIncidents(list, withLap) {
@@ -794,15 +796,27 @@ export function createCoach({ root }) {
     }));
     drawIncChart();
   }
+  // 사고 장면: 앞뒤 6초 기록(차트)과 그 구간의 내 주행·주변 차(지도)를 같은 시간으로 맞춰 본다
+  let incWin = null, incT = 0, incPlay = null;
   function drawIncChart() {
     const src = A ? A.samples : N?.samples;
     $('#co-incfig').hidden = !selInc || !src;
     if (!selInc || !src) return;
     const e = selInc;
     const t0 = src[e.sample].t;
-    const W = src.filter((x) => x.t >= t0 - 6 && x.t <= t0 + 6 && x._seg === src[e.sample]._seg);
+    const seg = src[e.sample]._seg;
+    const W = src.filter((x) => x.t >= t0 - 6 && x.t <= t0 + 6 && x._seg === seg);
     const xs = W.map((x) => +(x.t - t0).toFixed(2));
     $('#co-incfig-name').textContent = `· ${e.name}${e.corner ? ` · ${e.corner}번 코너` : ''}`;
+    // 주변 차: 이 구간의 다른 차 위치 (id별 궤적)
+    const cars = new Map();
+    for (const x of W) if (x.cars) for (const o of x.cars) {
+      if (o.pit) continue;
+      if (Math.hypot(o.x - src[e.sample].x, o.z - src[e.sample].z) > 250) continue;
+      if (!cars.has(o.id)) cars.set(o.id, { n: o.n, pts: [] });
+      cars.get(o.id).pts.push({ t: x.t - t0, x: o.x, z: o.z });
+    }
+    incWin = { W, t0, xs, cars, e };
     incChart.set([
       { name: '속도 km/h', color: '--front', x: xs, y: W.map((x) => x.v * 3.6) },
       { name: '스로틀 %', color: '--ok', x: xs, y: W.map((x) => (x.thr ?? NaN) * 100) },
@@ -810,6 +824,101 @@ export function createCoach({ root }) {
       { name: '조향 %', color: '--c2', x: xs, y: W.map((x) => (x.steer ?? NaN) * 100) },
       ...(W.some((x) => Number.isFinite(x.slip) && x.slip !== 0) ? [{ name: '미끄러짐 °', color: '--warn', x: xs, y: W.map((x) => x.slip) }] : []),
     ], { markers: [{ x: 0, label: '시작', color: '--drag' }] });
+    setIncT(0);
+  }
+  function setIncT(t) {
+    incT = t;
+    $('#co-inc-t').value = String(t);
+    $('#co-inc-tl').textContent = `${t >= 0 ? '+' : ''}${t.toFixed(1)}초`;
+    if (!incWin) return;
+    incChart.markers = [{ x: 0, label: '시작', color: '--drag' }, { x: t, label: '', color: '--accent' }];
+    incChart.draw();
+    drawIncMap();
+  }
+  function drawIncMap() {
+    const cv = $('#co-incmap');
+    const W0 = cv.clientWidth || 360, H0 = cv.clientHeight || 260;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = W0 * dpr; cv.height = H0 * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W0, H0);
+    const { W, t0, cars } = incWin;
+    if (W.length < 2) return;
+    // 내 궤적 범위 + 여유 40 m
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const x of W) { minX = Math.min(minX, x.x); maxX = Math.max(maxX, x.x); minZ = Math.min(minZ, x.z); maxZ = Math.max(maxZ, x.z); }
+    minX -= 40; maxX += 40; minZ -= 40; maxZ += 40;
+    const sc = Math.min(W0 / (maxX - minX), H0 / (maxZ - minZ));
+    const ox = (W0 - (maxX - minX) * sc) / 2, oy = (H0 - (maxZ - minZ) * sc) / 2;
+    const P = (x, z) => [ox + (x - minX) * sc, oy + (z - minZ) * sc];
+    // 트랙 (지도가 있으면)
+    const L = currentLayout();
+    if (L) {
+      ctx.strokeStyle = css('--line'); ctx.lineWidth = Math.max(6, 12 * sc); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      let on = false;
+      for (let i = 0; i <= L.x.length; i++) {
+        const k = i % L.x.length;
+        const inside = L.x[k] > minX - 50 && L.x[k] < maxX + 50 && L.z[k] > minZ - 50 && L.z[k] < maxZ + 50;
+        if (!inside) { on = false; continue; }
+        const [px, py] = P(L.x[k], L.z[k]);
+        on ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+        on = true;
+      }
+      ctx.stroke();
+    }
+    // 주변 차 궤적과 지금 위치
+    for (const c of cars.values()) {
+      ctx.strokeStyle = css('--ink-2'); ctx.globalAlpha = 0.5; ctx.lineWidth = 1.5;
+      ctx.beginPath(); c.pts.forEach((p, i) => { const [px, py] = P(p.x, p.z); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }); ctx.stroke();
+      ctx.globalAlpha = 1;
+      let j = 0;
+      while (j < c.pts.length - 1 && c.pts[j + 1].t <= incT) j++;
+      if (Math.abs(c.pts[j].t - incT) < 0.5) {
+        const a = c.pts[Math.max(0, j - 1)], b = c.pts[Math.min(c.pts.length - 1, j + 1)];
+        drawCar(ctx, ...P(c.pts[j].x, c.pts[j].z), Math.atan2(P(b.x, b.z)[1] - P(a.x, a.z)[1], P(b.x, b.z)[0] - P(a.x, a.z)[0]), css('--ink-2'), 0.9);
+        ctx.fillStyle = css('--ink-2'); ctx.font = `10px ${css('--font-data')}`; ctx.textAlign = 'left';
+        ctx.fillText(c.n || '', P(c.pts[j].x, c.pts[j].z)[0] + 9, P(c.pts[j].x, c.pts[j].z)[1] - 6);
+      }
+    }
+    // 내 궤적: 브레이크 빨강 · 스로틀 초록 · 둘 다 아니면 회색
+    ctx.lineWidth = 3; ctx.lineCap = 'round';
+    for (let i = 1; i < W.length; i++) {
+      const x = W[i];
+      ctx.strokeStyle = (x.brk ?? 0) > 0.1 ? css('--drag') : (x.thr ?? 0) > 0.1 ? css('--ok') : css('--ink-2');
+      ctx.beginPath(); ctx.moveTo(...P(W[i - 1].x, W[i - 1].z)); ctx.lineTo(...P(x.x, x.z)); ctx.stroke();
+    }
+    // 시작 지점 표시와 지금 위치
+    const s0 = W.find((x) => x.t >= t0) || W[0];
+    ctx.strokeStyle = css('--drag'); ctx.lineWidth = 2;
+    const [sx, sy] = P(s0.x, s0.z);
+    ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2); ctx.stroke();
+    let i = 0;
+    while (i < W.length - 1 && W[i + 1].t - t0 <= incT) i++;
+    const a = W[Math.max(0, i - 2)], b = W[Math.min(W.length - 1, i + 2)];
+    const ang = Number.isFinite(b._h) && Math.hypot(b.x - a.x, b.z - a.z) > 0.2 ? Math.atan2(P(b.x, b.z)[1] - P(a.x, a.z)[1], P(b.x, b.z)[0] - P(a.x, a.z)[0]) : 0;
+    drawCar(ctx, ...P(W[i].x, W[i].z), ang, css('--accent'), 1.2);
+    ctx.fillStyle = css('--ink'); ctx.font = `600 11px ${css('--font-data')}`; ctx.textAlign = 'left';
+    ctx.fillText(`${Math.round(W[i].v * 3.6)} km/h · ${W[i].gear > 0 ? W[i].gear + '단' : W[i].gear === 0 ? 'N' : 'R'} · 스로틀 ${Math.round((W[i].thr ?? 0) * 100)}% · 브레이크 ${Math.round((W[i].brk ?? 0) * 100)}%`, 8, 16);
+    // 축척 20 m
+    ctx.strokeStyle = css('--ink-2'); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(8, H0 - 10); ctx.lineTo(8 + 20 * sc, H0 - 10); ctx.stroke();
+    ctx.fillStyle = css('--ink-2'); ctx.font = `10px ${css('--font-data')}`; ctx.fillText('20 m', 12 + 20 * sc, H0 - 6);
+  }
+  function toggleIncPlay() {
+    if (incPlay) { cancelAnimationFrame(incPlay); incPlay = null; $('#co-inc-play').textContent = '재생'; return; }
+    $('#co-inc-play').textContent = '정지';
+    let last = performance.now();
+    if (incT >= 5.9) incT = -6;
+    const step = (now) => {
+      const dt = (now - last) / 1000; last = now;
+      const t = Math.min(6, incT + dt);
+      setIncT(t);
+      if (t >= 6) { incPlay = null; $('#co-inc-play').textContent = '재생'; return; }
+      incPlay = requestAnimationFrame(step);
+    };
+    incPlay = requestAnimationFrame(step);
   }
 
   // ---------- 개선할 것 (한 눈에) ----------
@@ -1060,16 +1169,19 @@ export function createCoach({ root }) {
     const lap = A.laps[lapIdx];
     const rf = ref();
     const R = A.ref;
-    const a = Math.max(0, Math.min(c.turnIn, c.entry) - 60), b = Math.min(R.n - 1, c.exit + 60);
+    // 턴인 25 m 전부터 탈출 40 m 뒤까지만 (직선은 길게 그리지 않는다)
+    const a = Math.max(0, c.turnIn - 25), b = Math.min(R.n - 1, c.exit + 40);
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (let i = a; i <= b; i++) { minX = Math.min(minX, R.x[i]); maxX = Math.max(maxX, R.x[i]); minZ = Math.min(minZ, R.z[i]); maxZ = Math.max(maxZ, R.z[i]); }
     const pad = 30;
     const sc = Math.min((w - 2 * pad) / (maxX - minX + 20 || 1), (h - 2 * pad) / (maxZ - minZ + 20 || 1));
     const ox = (w - (maxX - minX) * sc) / 2, oy = (h - (maxZ - minZ) * sc) / 2;
-    const P = (x, z) => [ox + (x - minX) * sc, oy + (z - minZ) * sc];
+    const V = zoomView || { k: 1, dx: 0, dy: 0 };
+    const P = (x, z) => [(ox + (x - minX) * sc) * V.k + V.dx, (oy + (z - minZ) * sc) * V.k + V.dy];
+    const scv = sc * V.k;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.strokeStyle = css('--line');
-    ctx.lineWidth = Math.max(4, 2 * 6 * sc);
+    ctx.lineWidth = Math.max(4, 2 * 6 * scv);
     ctx.beginPath();
     for (let i = a; i <= b; i++) { const [px, py] = P(R.x[i], R.z[i]); i === a ? ctx.moveTo(px, py) : ctx.lineTo(px, py); }
     ctx.stroke();
@@ -1090,7 +1202,7 @@ export function createCoach({ root }) {
     };
     // 제동 구간 (기준 랩)
     if (rf.pedals) {
-      ctx.strokeStyle = css('--drag'); ctx.globalAlpha = 0.35; ctx.lineWidth = Math.max(4, 2 * 6 * sc);
+      ctx.strokeStyle = css('--drag'); ctx.globalAlpha = 0.35; ctx.lineWidth = Math.max(4, 2 * 6 * scv);
       ctx.beginPath();
       let on = false;
       for (let i = a; i <= b; i++) {
@@ -1118,9 +1230,9 @@ export function createCoach({ root }) {
       ctx.fillText(label, px, py - 9);
     }
     ctx.strokeStyle = css('--ink-2'); ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(12, h - 14); ctx.lineTo(12 + 10 * sc, h - 14); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(12, h - 14); ctx.lineTo(12 + 10 * scv, h - 14); ctx.stroke();
     ctx.fillStyle = css('--ink-2'); ctx.textAlign = 'left';
-    ctx.fillText(`10 m · 라인 사이 가로 거리는 ${EX}배 확대`, 16 + 10 * sc, h - 10);
+    ctx.fillText(`10 m · 라인 사이 가로 거리는 ${EX}배 확대 · 휠: 확대 · 끌기: 이동 · 두 번 클릭: 원래대로`, 16 + 10 * scv, h - 10);
     const L = lap.line[zoomCorner], B = rf.lap.line[zoomCorner];
     $('#co-zoom-info').textContent = lap === rf.lap ? '기준 랩입니다.'
       : `기준 대비 (안쪽 +) 턴인 ${sign(L.turnIn - B.turnIn, 1)} m · 꼭짓점 ${sign(L.apex - B.apex, 1)} m · 탈출 ${sign(L.exit - B.exit, 1)} m`;
@@ -1144,7 +1256,32 @@ export function createCoach({ root }) {
     store.set(`aerolab.goal.${trackName()}|${A?.myCls || ''}`, t);
     render();
   });
-  $('#co-zoom-corner').addEventListener('change', (e) => { zoomCorner = +e.target.value; drawZoom(); });
+  $('#co-zoom-corner').addEventListener('change', (e) => { zoomCorner = +e.target.value; zoomView = null; drawZoom(); });
+  $('#co-inc-t').addEventListener('input', (e) => setIncT(+e.target.value));
+  $('#co-inc-play').addEventListener('click', toggleIncPlay);
+  // 코너 라인 확대: 휠로 확대·축소, 끌어서 이동, 두 번 눌러 원래대로
+  zoom.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = zoom.getBoundingClientRect();
+    const k = e.deltaY < 0 ? 1.25 : 0.8;
+    zoomView = zoomView || { k: 1, dx: 0, dy: 0 };
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    zoomView.dx = mx - (mx - zoomView.dx) * k; zoomView.dy = my - (my - zoomView.dy) * k;
+    zoomView.k = Math.max(1, Math.min(12, zoomView.k * k));
+    if (zoomView.k === 1) zoomView = null;
+    drawZoom();
+  }, { passive: false });
+  let drag = null;
+  zoom.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; zoom.setPointerCapture(e.pointerId); });
+  zoom.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    zoomView = zoomView || { k: 1, dx: 0, dy: 0 };
+    zoomView.dx += e.clientX - drag.x; zoomView.dy += e.clientY - drag.y;
+    drag = { x: e.clientX, y: e.clientY };
+    drawZoom();
+  });
+  zoom.addEventListener('pointerup', () => { drag = null; });
+  zoom.addEventListener('dblclick', () => { zoomView = null; drawZoom(); });
   new ResizeObserver(() => { if (A) drawZoom(); }).observe(zoom.parentElement);
   new ResizeObserver(() => { setupMap(); drawMap(); }).observe(map.parentElement);
 
