@@ -54,9 +54,12 @@ export function createCoach({ root }) {
   // ---------- 데이터 소스 ----------
   let es = null;
   let live = null;
-  function connect() {
-    if (es) { es.close(); es = null; $('#co-live-btn').textContent = '실시간 연결'; status('연결을 끊었습니다.'); $('#co-live').hidden = true; live = null; return; }
+  let autoBlocked = false; // 직접 "연결 끊기"를 누르면 자동 연결을 멈춘다 (자동 연결을 다시 켜면 풀림)
+  function connect(auto = false) {
+    if (es && auto) return;
+    if (es) { autoBlocked = true; es.close(); es = null; $('#co-live-btn').textContent = '실시간 연결'; status('연결을 끊었습니다.'); $('#co-live').hidden = true; live = null; return; }
     const port = +$('#co-port').value || 8770;
+    try { localStorage.setItem('aerolab-port', String(port)); } catch { /* 무시 */ }
     samples = [];
     A = null; N = null; refKey = ''; extraRefs = [];
     live = { lapStartT: null, lap: null, dist: 0, last: null, prev: null, cornerSpoken: new Set(), cars: null, carsPrev: new Map(), carsT: 0, trafficIdx: -1 };
@@ -1033,7 +1036,13 @@ export function createCoach({ root }) {
   }
 
   // ---------- 컨트롤 ----------
-  $('#co-live-btn').addEventListener('click', connect);
+  $('#co-live-btn').addEventListener('click', () => connect());
+  // 게임 자동 연결 (기본 켜짐): 브리지가 게임 데이터를 보내기 시작하면 이 탭으로 넘어와 바로 연결한다
+  try {
+    $('#co-auto').checked = localStorage.getItem('aerolab-autolive') !== '0';
+    $('#co-port').value = localStorage.getItem('aerolab-port') || $('#co-port').value;
+  } catch { /* 무시 */ }
+  $('#co-auto').addEventListener('change', (e) => { autoBlocked = false; try { localStorage.setItem('aerolab-autolive', e.target.checked ? '1' : '0'); } catch { /* 무시 */ } });
   $('#co-file').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ''; });
   $('#co-reffile').addEventListener('change', (e) => { const f = e.target.files?.[0]; if (f) loadRefFile(f); e.target.value = ''; });
   $('#co-mini-btn').addEventListener('click', openMini);
@@ -1051,6 +1060,9 @@ export function createCoach({ root }) {
   return {
     setVisible(v) { visible = v; if (v) { setupMap(); drawMap(); } },
     themeChanged() { if (visible) render(); },
+    connect,
+    isLive: () => !!es,
+    autoBlocked: () => autoBlocked,
     _debug: () => ({ A, samples }),
   };
 }

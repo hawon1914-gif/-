@@ -436,9 +436,10 @@ body[data-tab="coach"] .layout { grid-template-columns: minmax(0, 1fr); }
         <label class="file-btn" for="co-file">기록 파일 열기 (.jsonl)<input id="co-file" type="file" accept=".jsonl,.json,.txt"></label>
         <label class="file-btn" for="co-reffile" title="다른 사람·다른 날의 기록에서 가장 빠른 랩을 기준 후보로 추가">기준 랩 파일 추가<input id="co-reffile" type="file" accept=".jsonl,.json,.txt"></label>
         <button id="co-mini-btn" type="button" title="게임 위에 띄울 수 있는 작은 창 (게임은 창 모드·테두리 없는 창이어야 위에 보입니다)">미니맵 창</button>
+        <label for="co-auto" title="브리지가 켜져 있으면 게임에서 트랙에 나가는 순간 이 탭으로 넘어와 자동으로 연결합니다"><input id="co-auto" type="checkbox" checked> 게임 자동 연결</label>
         <label for="co-voice"><input id="co-voice" type="checkbox"> 음성 안내</label>
       </div>
-      <p class="note" id="co-status">게임에서 트랙에 나간 뒤 "실시간 연결"을 누르거나, 지난 주행 기록(.jsonl)을 여세요.</p>
+      <p class="note" id="co-status">브리지가 켜져 있으면 게임에서 트랙에 나가는 순간 자동으로 연결됩니다. 지난 주행은 기록 파일(.jsonl)로 열 수 있습니다.</p>
       <div class="co-live" id="co-live" hidden>
         <div><span>속도</span><b id="co-live-speed">0</b><small>km/h</small></div>
         <div><span>기어</span><b id="co-live-gear">N</b></div>
@@ -512,8 +513,9 @@ body[data-tab="coach"] .layout { grid-template-columns: minmax(0, 1fr); }
       <details class="co-help">
         <summary>르망 얼티밋 연결 방법</summary>
         <ol>
-          <li>PC에서 <code>bridge/start_lmu_bridge.bat</code>을 실행합니다 (Python 3.8 이상 필요). 최근 르망 얼티밋은 게임이 직접 텔레메트리를 내보내므로 플러그인 설치는 필요 없습니다. 자세한 내용은 <code>bridge/README.md</code>에 있습니다.</li>
-          <li>게임에서 트랙에 나간 뒤 "실시간 연결"을 누릅니다. 주행은 <code>bridge/recordings</code> 폴더에 자동으로 기록되고, 나중에 "기록 파일 열기"로 다시 분석할 수 있습니다.</li>
+          <li>처음 한 번만: <code>AeroLab.html</code>을 <code>bridge</code> 폴더에 넣고 <code>bridge/install_autostart.bat</code>을 실행합니다 (Python 3.8 이상 필요). 이후로는 컴퓨터를 켤 때마다 브리지가 창 없이 자동으로 켜집니다.</li>
+          <li>게임에서 트랙에 나가면 Aero Lab이 자동으로 열리고 연결됩니다. 이미 열어 둔 Aero Lab이 있으면 그 창이 코칭 탭으로 넘어가 연결됩니다. 아무것도 누를 필요가 없습니다.</li>
+          <li>주행은 세션마다 <code>bridge/recordings</code> 폴더에 따로 기록되고, 나중에 "기록 파일 열기"로 다시 분석할 수 있습니다. 자동 실행을 끄려면 <code>bridge/uninstall_autostart.bat</code>.</li>
           <li>"미니맵 창"은 항상 위에 뜨는 작은 창입니다. 게임을 창 모드나 테두리 없는 창으로 두면 게임 화면 위에 놓을 수 있습니다.</li>
         </ol>
         <p>기준 랩은 같은 세션에서 같은 클래스로 가장 빨리 달린 랩입니다 (다른 사람이어도). 다른 사람의 페달 입력은 게임이 주지 않아, 그 경우 속도·라인·구간 시간으로 비교합니다. 전 세계 기록은 르망 얼티밋이 공개하는 곳을 찾지 못해 자동으로 가져오지 못합니다. 커뮤니티 기록 사이트의 시간을 "목표 기록"에 넣으면 차이만 보여 줍니다.</p>

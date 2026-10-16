@@ -107,6 +107,7 @@ function bindEnv() {
 
 // ---------- 탭 ----------
 
+let selectTab = () => {};
 function bindTabs() {
   const tabs = [...document.querySelectorAll('[role=tab]')];
   const select = (name) => {
@@ -119,6 +120,7 @@ function bindTabs() {
     storageSet('aerolab-tab', name);
     update();
   };
+  selectTab = select;
   for (const t of tabs) t.addEventListener('click', () => select(t.dataset.tab));
   const fromHash = location.hash.slice(1);
   const saved = storageGet('aerolab-tab');
@@ -529,15 +531,40 @@ function ensureDrive() {
 
 let coach = null;
 let coachLoading = false;
+let coachPromise = null;
 function ensureCoach() {
-  if (coach || coachLoading) return;
+  if (coachPromise) return coachPromise;
   coachLoading = true;
-  import('./coach-ui.js')
+  coachPromise = import('./coach-ui.js')
     .then(({ createCoach }) => {
       coach = createCoach({ root: $('tab-coach'), getCar: () => state.car, getCarId: () => state.carId, getEnv: () => state.env });
       coach.setVisible(state.tab === 'coach');
+      return coach;
     })
     .finally(() => { coachLoading = false; });
+  return coachPromise;
+}
+
+// 게임 자동 연결: 브리지가 켜져 있고 게임 데이터가 오기 시작하면 코칭 탭으로 넘어가 바로 연결한다.
+// 버튼을 누를 필요가 없다. 코칭 탭의 "자동 연결"을 끄면 멈춘다.
+function watchBridge() {
+  let busy = false;
+  const check = async () => {
+    if (busy || coach?.isLive() || coach?.autoBlocked() || storageGet('aerolab-autolive') === '0') return;
+    busy = true;
+    try {
+      const port = +(storageGet('aerolab-port') || 8770);
+      const r = await fetch(`http://127.0.0.1:${port}/status`, { cache: 'no-store' });
+      const st = await r.json();
+      if (st.connected) {
+        const c = await ensureCoach();
+        if (state.tab !== 'coach') selectTab('coach');
+        c.connect(true);
+      }
+    } catch { /* 브리지가 꺼져 있음: 다음에 다시 본다 */ } finally { busy = false; }
+  };
+  setInterval(check, 2000);
+  check();
 }
 
 // ---------- 갱신 ----------
@@ -575,6 +602,7 @@ bindBraking();
 bindSlip();
 bindTunnel();
 bindTabs();
+watchBridge();
 const redraw = () => {
   Object.values(charts).forEach((c) => c.draw());
   drawReplay();

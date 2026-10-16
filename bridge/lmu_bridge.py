@@ -7,7 +7,9 @@ Le Mans Ultimate (rFactor 2 엔진) 텔레메트리 브리지.
 한다. 파이썬 표준 라이브러리만 쓰므로 따로 설치할 것이 없다 (Python 3.8 이상, Windows).
 
 사용법:
-  python lmu_bridge.py            게임 연결 (게임 실행 중이어야 함)
+  python lmu_bridge.py            게임 연결 (게임을 나중에 켜도 된다. 켜지면 알아서 붙는다)
+  pythonw lmu_bridge.py --open    창 없이 실행. 게임이 데이터를 보내기 시작하면 Aero Lab을 자동으로 연다
+                                  (install_autostart.bat이 Windows 시작 프로그램에 이렇게 등록한다)
   python lmu_bridge.py --demo     게임 없이 가짜 데이터로 연결 시험
   python lmu_bridge.py --replay 파일.jsonl   기록 파일을 실제 속도로 다시 보내기
 
@@ -23,6 +25,7 @@ import queue
 import sys
 import threading
 import time
+import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -509,6 +512,22 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
 
     def do_GET(self):
+        if self.path in ('/', '/index.html', '/AeroLab.html'):
+            page = find_page()
+            if not page:
+                self.send_response(404)
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.end_headers()
+                self.wfile.write('AeroLab.html을 bridge 폴더에 넣어 주세요.'.encode())
+                return
+            with open(page, 'rb') as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.startswith('/status'):
             body = json.dumps(status, ensure_ascii=False).encode()
             self.send_response(200)
@@ -541,6 +560,20 @@ class Handler(BaseHTTPRequestHandler):
                 clients.remove(q)
 
 
+def find_page():
+    # Aero Lab 한 파일 빌드: bridge 폴더에 두거나, 저장소 구조면 ../dist
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in (os.path.join(here, 'AeroLab.html'), os.path.join(here, '..', 'dist', 'AeroLab.html')):
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def client_count():
+    with clients_lock:
+        return len(clients)
+
+
 def broadcast(sample):
     data = json.dumps(sample, ensure_ascii=False, separators=(',', ':')).encode()
     with clients_lock:
@@ -551,6 +584,51 @@ def broadcast(sample):
                 pass
 
 
+# ---------------------------------------------------------------- Windows 시작 프로그램 등록
+SHORTCUT = 'AeroLab Bridge.lnk'
+
+
+def _ps(script):
+    import subprocess
+    return subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], capture_output=True, text=True)
+
+
+def _q(text):
+    # PowerShell 작은따옴표 문자열
+    return "'" + str(text).replace("'", "''") + "'"
+
+
+def install_autostart():
+    if sys.platform != 'win32':
+        raise SystemExit('Windows에서만 등록할 수 있습니다.')
+    here = os.path.dirname(os.path.abspath(__file__))
+    exe = sys.executable
+    pyw = os.path.join(os.path.dirname(exe), 'pythonw.exe')
+    if not os.path.isfile(pyw):
+        pyw = exe  # 창 없는 실행 파일이 없으면 일반 python (작은 창이 뜬다)
+    script = (
+        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Startup') + '\\' + " + _q(SHORTCUT) + ");"
+        f"$s.TargetPath = {_q(pyw)}; $s.Arguments = {_q(chr(34) + os.path.join(here, 'lmu_bridge.py') + chr(34) + ' --open')};"
+        f"$s.WorkingDirectory = {_q(here)}; $s.Description = 'Aero Lab telemetry bridge'; $s.Save()"
+    )
+    r = _ps(script)
+    if r.returncode != 0:
+        raise SystemExit('시작 프로그램 등록에 실패했습니다: ' + (r.stderr or r.stdout).strip())
+    import subprocess
+    # 지금 바로 켠다 (이미 켜져 있으면 새로 켠 것은 포트가 겹쳐 알아서 꺼진다)
+    subprocess.Popen([pyw, os.path.join(here, 'lmu_bridge.py'), '--open'], cwd=here, creationflags=getattr(subprocess, 'DETACHED_PROCESS', 0))
+    print('등록했습니다. 이제 Windows에 로그인할 때마다 브리지가 창 없이 켜집니다.')
+    print('게임에서 트랙에 나가면 Aero Lab이 자동으로 열리고 연결됩니다 (AeroLab.html이 bridge 폴더에 있어야 합니다).')
+
+
+def uninstall_autostart():
+    if sys.platform != 'win32':
+        raise SystemExit('Windows에서만 쓸 수 있습니다.')
+    _ps("Remove-Item -ErrorAction SilentlyContinue ([Environment]::GetFolderPath('Startup') + '\\' + " + _q(SHORTCUT) + ")")
+    _ps("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*lmu_bridge.py*--open*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
+    print('자동 실행을 껐습니다.')
+
+
 def main():
     ap = argparse.ArgumentParser(description='Le Mans Ultimate 텔레메트리 브리지')
     ap.add_argument('--demo', action='store_true', help='게임 없이 가짜 데이터로 시험')
@@ -559,7 +637,21 @@ def main():
     ap.add_argument('--port', type=int, default=8770)
     ap.add_argument('--hz', type=float, default=60)
     ap.add_argument('--no-record', action='store_true', help='기록 파일을 만들지 않음')
+    ap.add_argument('--install', action='store_true', help='Windows 시작 프로그램에 등록 (로그인하면 창 없이 자동 실행)')
+    ap.add_argument('--uninstall', action='store_true', help='시작 프로그램 등록 해제')
+    ap.add_argument('--open', action='store_true', help='게임 데이터가 오기 시작하면 Aero Lab을 브라우저로 연다 (이미 열려 있으면 열지 않음)')
     args = ap.parse_args()
+    if args.install:
+        install_autostart()
+        return
+    if args.uninstall:
+        uninstall_autostart()
+        return
+
+    # 창 없이(pythonw) 실행되면 화면 출력이 없으므로 bridge.log에 남긴다
+    if sys.stdout is None:
+        log = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bridge.log'), 'w', encoding='utf-8', buffering=1)
+        sys.stdout = sys.stderr = log
 
     if args.replay:
         reader, status['source'] = ReplayReader(args.replay, args.speed), '기록 재생'
@@ -568,10 +660,20 @@ def main():
     else:
         reader, status['source'] = GameReader(), 'Le Mans Ultimate'
 
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    try:
+        server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+    except OSError:
+        # 이미 다른 브리지가 떠 있다 (시작 프로그램으로 켜 둔 것 등) → 그쪽을 쓰면 되므로 조용히 끝낸다
+        print(f'[브리지] 포트 {args.port}을 이미 다른 브리지가 쓰고 있습니다. 그 브리지를 그대로 쓰면 됩니다.')
+        return
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f'[브리지] {status["source"]} → http://127.0.0.1:{args.port}/stream')
-    print('[브리지] Aero Lab의 "코칭" 탭에서 "실시간 연결"을 누르세요. 끝내려면 Ctrl+C.')
+    print(f'[브리지] 게임을 켜고 트랙에 나가면 자동으로 데이터가 갑니다. Aero Lab은 열려 있기만 하면 알아서 연결합니다{" (화면: http://127.0.0.1:%d/)" % args.port if find_page() else ""}. 끝내려면 Ctrl+C.')
+    opened = False  # 이번 게임 실행에서 브라우저를 열었는가
+    first_data = None
+    last_wall = 0.0
+    rec_key = None
+    last_wait = ''
 
     rec_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recordings')
     rec = None
@@ -589,12 +691,34 @@ def main():
             for s in batch:
                 # 주행 중이 아니어도 차가 움직이면 받는다 (게임 안에서 리플레이를 틀어 둔 경우를 위해)
                 if (s.get('realtime', True) or s.get('v', 0) > 1) and s['t'] != last_t:
+                    now = time.time()
+                    # 새 세션이면 새 기록 파일: 트랙·차가 바뀌거나, 게임 시간이 거꾸로 가거나(세션 재시작), 1분 넘게 데이터가 없었으면
+                    key = (s.get('track', ''), s.get('car', ''))
+                    if rec and (key != rec_key or (last_t is not None and s['t'] < last_t - 5) or now - last_wall > 60):
+                        rec.close()
+                        print(f'[브리지] 기록을 저장했습니다: {status["recording"]}')
+                        rec = None
+                    if now - last_wall > 60:
+                        first_data = now
+                        opened = False
+                    last_wall = now
+                    # 게임 데이터가 오기 시작하고 3초 안에 열려 있는 Aero Lab이 붙지 않으면 브라우저로 연다
+                    if args.open and not opened and now - first_data > 3:
+                        opened = True
+                        if client_count() == 0:
+                            url = f'http://127.0.0.1:{args.port}/#coach' if find_page() else None
+                            if url:
+                                print(f'[브리지] Aero Lab을 엽니다: {url}')
+                                webbrowser.open(url)
+                            else:
+                                print('[브리지] AeroLab.html을 bridge 폴더에 넣으면 자동으로 열어 줍니다.')
                     last_t = s['t']
                     status.update(connected=True, track=s.get('track', ''), car=s.get('car', ''))
                     status['samples'] += 1
                     broadcast(s)
                     if not args.no_record and not args.replay:
                         if rec is None:
+                            rec_key = key
                             os.makedirs(rec_dir, exist_ok=True)
                             safe = ''.join(ch if ch.isalnum() else '_' for ch in s.get('track', 'track'))[:40]
                             path = os.path.join(rec_dir, f'{datetime.now():%Y%m%d_%H%M%S}_{safe}.jsonl')
@@ -612,9 +736,11 @@ def main():
                     if args.replay and reader.i >= len(reader.rows):
                         print('[브리지] 재생이 끝났습니다.')
                         break
-                    print('[브리지] 게임 데이터를 기다리는 중…')
-                    if hasattr(reader, 'diag'):
-                        print('         ' + reader.diag())
+                    # 같은 내용이면 다시 쓰지 않는다 (하루 종일 켜 둬도 로그가 커지지 않게)
+                    msg = '[브리지] 게임 데이터를 기다리는 중…' + ('\n         ' + reader.diag() if hasattr(reader, 'diag') else '')
+                    if msg != last_wait:
+                        print(msg)
+                        last_wait = msg
             time.sleep(max(0.0, period - (time.time() - tick)))
     except KeyboardInterrupt:
         pass
