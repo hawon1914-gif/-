@@ -8,8 +8,8 @@ Le Mans Ultimate (rFactor 2 엔진) 텔레메트리 브리지.
 
 사용법:
   python lmu_bridge.py            게임 연결 (게임을 나중에 켜도 된다. 켜지면 알아서 붙는다)
-  pythonw lmu_bridge.py --open    창 없이 실행. 게임이 데이터를 보내기 시작하면 Aero Lab을 자동으로 연다
-                                  (install_autostart.bat이 Windows 시작 프로그램에 이렇게 등록한다)
+  python lmu_bridge.py --open     켜자마자 Aero Lab을 연다 (AeroLab_실행.bat이 이렇게 실행한다).
+                                  게임은 그 뒤에 켜도 되고, 트랙에 나가면 페이지가 알아서 연결·기록한다
   python lmu_bridge.py --demo     게임 없이 가짜 데이터로 연결 시험
   python lmu_bridge.py --replay 파일.jsonl   기록 파일을 실제 속도로 다시 보내기
 
@@ -529,6 +529,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if self.path.startswith('/status'):
+            status['seen'] = time.time()  # 열려 있는 Aero Lab이 2초마다 묻는다
             body = json.dumps(status, ensure_ascii=False).encode()
             self.send_response(200)
             self._cors()
@@ -584,51 +585,6 @@ def broadcast(sample):
                 pass
 
 
-# ---------------------------------------------------------------- Windows 시작 프로그램 등록
-SHORTCUT = 'AeroLab Bridge.lnk'
-
-
-def _ps(script):
-    import subprocess
-    return subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], capture_output=True, text=True)
-
-
-def _q(text):
-    # PowerShell 작은따옴표 문자열
-    return "'" + str(text).replace("'", "''") + "'"
-
-
-def install_autostart():
-    if sys.platform != 'win32':
-        raise SystemExit('Windows에서만 등록할 수 있습니다.')
-    here = os.path.dirname(os.path.abspath(__file__))
-    exe = sys.executable
-    pyw = os.path.join(os.path.dirname(exe), 'pythonw.exe')
-    if not os.path.isfile(pyw):
-        pyw = exe  # 창 없는 실행 파일이 없으면 일반 python (작은 창이 뜬다)
-    script = (
-        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Startup') + '\\' + " + _q(SHORTCUT) + ");"
-        f"$s.TargetPath = {_q(pyw)}; $s.Arguments = {_q(chr(34) + os.path.join(here, 'lmu_bridge.py') + chr(34) + ' --open')};"
-        f"$s.WorkingDirectory = {_q(here)}; $s.Description = 'Aero Lab telemetry bridge'; $s.Save()"
-    )
-    r = _ps(script)
-    if r.returncode != 0:
-        raise SystemExit('시작 프로그램 등록에 실패했습니다: ' + (r.stderr or r.stdout).strip())
-    import subprocess
-    # 지금 바로 켠다 (이미 켜져 있으면 새로 켠 것은 포트가 겹쳐 알아서 꺼진다)
-    subprocess.Popen([pyw, os.path.join(here, 'lmu_bridge.py'), '--open'], cwd=here, creationflags=getattr(subprocess, 'DETACHED_PROCESS', 0))
-    print('등록했습니다. 이제 Windows에 로그인할 때마다 브리지가 창 없이 켜집니다.')
-    print('게임에서 트랙에 나가면 Aero Lab이 자동으로 열리고 연결됩니다 (AeroLab.html이 bridge 폴더에 있어야 합니다).')
-
-
-def uninstall_autostart():
-    if sys.platform != 'win32':
-        raise SystemExit('Windows에서만 쓸 수 있습니다.')
-    _ps("Remove-Item -ErrorAction SilentlyContinue ([Environment]::GetFolderPath('Startup') + '\\' + " + _q(SHORTCUT) + ")")
-    _ps("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*lmu_bridge.py*--open*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
-    print('자동 실행을 껐습니다.')
-
-
 def main():
     ap = argparse.ArgumentParser(description='Le Mans Ultimate 텔레메트리 브리지')
     ap.add_argument('--demo', action='store_true', help='게임 없이 가짜 데이터로 시험')
@@ -637,16 +593,8 @@ def main():
     ap.add_argument('--port', type=int, default=8770)
     ap.add_argument('--hz', type=float, default=60)
     ap.add_argument('--no-record', action='store_true', help='기록 파일을 만들지 않음')
-    ap.add_argument('--install', action='store_true', help='Windows 시작 프로그램에 등록 (로그인하면 창 없이 자동 실행)')
-    ap.add_argument('--uninstall', action='store_true', help='시작 프로그램 등록 해제')
-    ap.add_argument('--open', action='store_true', help='게임 데이터가 오기 시작하면 Aero Lab을 브라우저로 연다 (이미 열려 있으면 열지 않음)')
+    ap.add_argument('--open', action='store_true', help='켜자마자 Aero Lab을 브라우저로 연다 (이미 열려 있는 Aero Lab이 붙으면 열지 않음)')
     args = ap.parse_args()
-    if args.install:
-        install_autostart()
-        return
-    if args.uninstall:
-        uninstall_autostart()
-        return
 
     # 창 없이(pythonw) 실행되면 화면 출력이 없으므로 bridge.log에 남긴다
     if sys.stdout is None:
@@ -669,8 +617,17 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f'[브리지] {status["source"]} → http://127.0.0.1:{args.port}/stream')
     print(f'[브리지] 게임을 켜고 트랙에 나가면 자동으로 데이터가 갑니다. Aero Lab은 열려 있기만 하면 알아서 연결합니다{" (화면: http://127.0.0.1:%d/)" % args.port if find_page() else ""}. 끝내려면 Ctrl+C.')
-    opened = False  # 이번 게임 실행에서 브라우저를 열었는가
-    first_data = None
+    if args.open:
+        # 이미 열려 있는 Aero Lab이 2초 안에 붙으면 새로 열지 않는다
+        time.sleep(2.5)
+        if client_count() == 0 and time.time() - status.get('seen', 0) > 3:
+            page = find_page()
+            if page:
+                url = f'http://127.0.0.1:{args.port}/#coach'
+                print(f'[브리지] Aero Lab을 엽니다: {url}')
+                webbrowser.open(url)
+            else:
+                print('[브리지] AeroLab.html을 bridge 폴더에 넣으면 자동으로 열어 줍니다.')
     last_wall = 0.0
     rec_key = None
     last_wait = ''
@@ -698,20 +655,7 @@ def main():
                         rec.close()
                         print(f'[브리지] 기록을 저장했습니다: {status["recording"]}')
                         rec = None
-                    if now - last_wall > 60:
-                        first_data = now
-                        opened = False
                     last_wall = now
-                    # 게임 데이터가 오기 시작하고 3초 안에 열려 있는 Aero Lab이 붙지 않으면 브라우저로 연다
-                    if args.open and not opened and now - first_data > 3:
-                        opened = True
-                        if client_count() == 0:
-                            url = f'http://127.0.0.1:{args.port}/#coach' if find_page() else None
-                            if url:
-                                print(f'[브리지] Aero Lab을 엽니다: {url}')
-                                webbrowser.open(url)
-                            else:
-                                print('[브리지] AeroLab.html을 bridge 폴더에 넣으면 자동으로 열어 줍니다.')
                     last_t = s['t']
                     status.update(connected=True, track=s.get('track', ''), car=s.get('car', ''))
                     status['samples'] += 1
