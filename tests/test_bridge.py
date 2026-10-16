@@ -23,6 +23,10 @@ class StructSizes(unittest.TestCase):
         self.assertEqual(ctypes.sizeof(B.LMUObjectOut), 324820)
         self.assertEqual(B.LMUObjectOut.scoring.offset, 1632)
         self.assertEqual(B.LMUObjectOut.telemetry.offset, 128464)
+        # 르망 얼티밋 전용 필드 위치 (pyLMUSharedMemory와 같음)
+        T = B.LMUVehicleTelemetry
+        self.assertEqual(ctypes.sizeof(T), 1888)
+        self.assertEqual((T.mLapInvalidated.offset, T.mABSActive.offset, T.mTCActive.offset, T.mTC.offset, T.mABS.offset, T.mWheels.offset), (745, 746, 747, 750, 756, 848))
 
     def test_lmu_reader(self):
         # 가짜 LMU_Data 버퍼: 내 차 1대 + 다른 차 1대
@@ -42,6 +46,7 @@ class StructSizes(unittest.TestCase):
             t.mID, t.mLapNumber, t.mElapsedTime = vid, 3, 12.5
             t.mLocalVel.z = 50.0 if vid == 7 else 40.0
             t.mUnfilteredThrottle = 0.8
+            t.mTCActive = vid == 7
             for w in t.mWheels:
                 w.mTireInnerLayerTemperature[:] = [350.0, 350.0, 350.0]
             t.mTrackName[:4] = list(b'Spa\0')
@@ -54,6 +59,8 @@ class StructSizes(unittest.TestCase):
         self.assertEqual(s['lat'], 1.5)
         self.assertEqual(s['track'], 'Spa')
         self.assertTrue(s['realtime'])
+        self.assertEqual(s['tc'], 1)
+        self.assertEqual(s['abs'], 0)
         cars = samples[2]['cars']
         self.assertEqual(len(cars), 1)
         self.assertEqual(cars[0]['id'], 9)

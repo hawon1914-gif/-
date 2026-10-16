@@ -165,6 +165,30 @@ OFF_SURFACES = {2, 3, 4}
 LMU_MAX_VEHICLES = 104
 
 
+# 르망 얼티밋은 rF2 텔레메트리의 예비 공간(mExpansion 152바이트)에 TC·ABS·하이브리드 등을 넣었다
+_base = [f for f in VehicleTelemetry._fields_ if f[0] not in ('mExpansion', 'mWheels')]
+class LMUVehicleTelemetry(ctypes.Structure):
+    _pack_ = 4
+    _fields_ = _base + [
+        ('mDeltaBest', ctypes.c_double), ('mBatteryChargeFraction', ctypes.c_double),
+        ('mElectricBoostMotorTorque', ctypes.c_double), ('mElectricBoostMotorRPM', ctypes.c_double),
+        ('mElectricBoostMotorTemperature', ctypes.c_double), ('mElectricBoostWaterTemperature', ctypes.c_double),
+        ('mElectricBoostMotorState', ctypes.c_ubyte), ('mLapInvalidated', ctypes.c_bool),
+        ('mABSActive', ctypes.c_bool), ('mTCActive', ctypes.c_bool), ('mSpeedLimiterActive', ctypes.c_bool),
+        ('mWiperState', ctypes.c_uint8), ('mTC', ctypes.c_uint8), ('mTCMax', ctypes.c_uint8),
+        ('mTCSlip', ctypes.c_uint8), ('mTCSlipMax', ctypes.c_uint8), ('mTCCut', ctypes.c_uint8), ('mTCCutMax', ctypes.c_uint8),
+        ('mABS', ctypes.c_uint8), ('mABSMax', ctypes.c_uint8), ('mMotorMap', ctypes.c_uint8), ('mMotorMapMax', ctypes.c_uint8),
+        ('mMigration', ctypes.c_uint8), ('mMigrationMax', ctypes.c_uint8), ('mFrontAntiSway', ctypes.c_uint8),
+        ('mFrontAntiSwayMax', ctypes.c_uint8), ('mRearAntiSway', ctypes.c_uint8), ('mRearAntiSwayMax', ctypes.c_uint8),
+        ('mLiftAndCoastProgress', ctypes.c_uint8), ('mTrackLimitsSteps', ctypes.c_uint8),
+        ('mRegen', ctypes.c_float), ('mStateOfCharge', ctypes.c_float), ('mVirtualEnergy', ctypes.c_float),
+        ('mTimeGapCarAhead', ctypes.c_float), ('mTimeGapCarBehind', ctypes.c_float),
+        ('mTimeGapPlaceAhead', ctypes.c_float), ('mTimeGapPlaceBehind', ctypes.c_float),
+        ('mVehicleModel', ctypes.c_char * 30), ('mVehicleClass', ctypes.c_uint8), ('mVehicleChampionship', ctypes.c_uint8),
+        ('mExpansion', ctypes.c_ubyte * 20), ('mWheels', Wheel * 4),
+    ]
+
+
 class LMUScoringData(ctypes.Structure):
     _pack_ = 4
     _fields_ = [
@@ -177,7 +201,7 @@ class LMUTelemetryData(ctypes.Structure):
     _pack_ = 4
     _fields_ = [
         ('mActiveVehicles', ctypes.c_uint8), ('mPlayerVehicleIdx', ctypes.c_uint8), ('mPlayerHasVehicle', ctypes.c_bool),
-        ('mVehicles', VehicleTelemetry * LMU_MAX_VEHICLES),
+        ('mVehicles', LMUVehicleTelemetry * LMU_MAX_VEHICLES),
     ]
 
 
@@ -371,6 +395,11 @@ class GameReader:
             'wr': [round(abs(w.mRotation), 1) for w in wheels],
             'grip': [round(w.mGripFract, 2) for w in wheels],
         }
+        # 르망 얼티밋 전용: TC·ABS가 지금 개입 중인가, 게임이 이번 랩을 무효 처리했는가
+        if hasattr(t, 'mTCActive'):
+            sample['tc'] = 1 if t.mTCActive else 0
+            sample['abs'] = 1 if t.mABSActive else 0
+            sample['inv'] = 1 if t.mLapInvalidated else 0
         # 충격: 게임이 마지막 충격 시각·세기를 준다. 새 충격일 때만 넣는다.
         # 브리지를 켜기 전의 충격은 무시한다 (처음 읽은 값을 기준으로).
         if self.last_impact is None:
@@ -390,7 +419,8 @@ class GameReader:
 
     def _info(self, info, t, ps):
         w = info.mWind
-        return {
+        extra = {'tcLvl': t.mTC, 'tcMax': t.mTCMax, 'absLvl': t.mABS, 'absMax': t.mABSMax} if hasattr(t, 'mTC') else {}
+        return {**extra,
             'session': info.mSession, 'phase': info.mGamePhase, 'cls': text(ps.mVehicleClass),
             'air': round(info.mAmbientTemp, 1), 'trackT': round(info.mTrackTemp, 1),
             'rain': round(info.mRaining, 2), 'cloud': round(info.mDarkCloud, 2),

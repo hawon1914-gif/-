@@ -149,3 +149,20 @@ test('게임 공식 랩 시간·섹터: 결승선 직후 게임 값으로 바꾸
   assert.equal(B.theoryKind, '섹터별 최고 기록의 합');
   assert.ok(B.theoretical <= B.best.time && B.best.time - B.theoretical < 3);
 });
+
+test('코너 가이드: 제동 시점·기어·코너 속도, TC/ABS 개입과 덜 밟을 정도', async () => {
+  const { cornerGuide, guideText, gearRatios, recommendGear } = await import('../js/coach.js');
+  // ABS·TC 흉내: 강하게 제동하는 곳에서 ABS, 꼭짓점 뒤 급가속에서 TC
+  const S = D.samples.map((x) => ({ ...x, abs: x.brk > 0.9 && x.v > 30 ? 1 : 0, tc: x.thr > 0.95 && x.v < 25 ? 1 : 0 }));
+  const B = analyzeSession(S);
+  const G = gearRatios(B.samples);
+  assert.ok(Object.keys(G.ratio).length >= 3);
+  const r = recommendGear(G, 25);
+  assert.ok(r.gear >= 1 && r.rpm <= G.maxRpm);
+  const guide = cornerGuide(B, defaultReference(B));
+  assert.equal(guide.length, B.corners.length);
+  assert.ok(guide.every((g) => g.targetGear >= 1));
+  assert.ok(guide.some((g) => g.abs) && guide.some((g) => g.tc));
+  const t = guideText(guide.find((g) => g.abs));
+  assert.match(t.aids, /ABS \d+ m 개입.*→ 처음 브레이크 \d+%를 \d+% 정도로/);
+});

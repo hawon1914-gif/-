@@ -99,6 +99,8 @@ function finishLap(raw) {
   const hasOff = S.some((s) => s.off);
   const pit = S.some((s) => s.pit);
   if (pit) why.push('피트');
+  // 게임이 이번 랩을 무효 처리했는가 (르망 얼티밋: 트랙 리밋 등). 결승선 직후 1초는 앞 랩 값이 남아 있을 수 있어 뺀다.
+  if (S.some((s) => s.inv && s.t - S[0].t > 1)) why.push('게임이 랩을 무효 처리 (트랙 리밋 등)');
   if (S.some((s) => s.ctrl !== undefined && s.ctrl !== 0 && s.ctrl !== 3)) why.push('AI가 운전한 구간 있음');
   // 랩 끝 무렵의 게임 랩 인정 값
   const last = [...S].reverse().find((s) => Number.isFinite(s.cnt));
@@ -114,6 +116,10 @@ export function resampleLap(lap, N = null) {
   const n = N ?? Math.floor(len);
   const out = { n, length: len, t: new Float32Array(n), v: new Float32Array(n), thr: new Float32Array(n), brk: new Float32Array(n), steer: new Float32Array(n), gear: new Int8Array(n), x: new Float32Array(n), z: new Float32Array(n), lat: new Float32Array(n).fill(NaN), edge: new Float32Array(n).fill(NaN), traffic: new Uint8Array(n) };
   const hasLat = S.some((s) => Number.isFinite(s.lat));
+  // 회전수, TC·ABS 개입 (르망 얼티밋 새 브리지 기록에만 있음)
+  out.rpm = new Float32Array(n);
+  out.tc = new Float32Array(n).fill(NaN);
+  out.abs = new Float32Array(n).fill(NaN);
   let j = 0;
   for (let k = 0; k < n; k++) {
     // 다른 랩과 같은 길이로 맞출 때는 비율로 위치를 정한다
@@ -133,6 +139,10 @@ export function resampleLap(lap, N = null) {
     out.z[k] = lerp('z');
     if (hasLat && Number.isFinite(a.lat) && Number.isFinite(b.lat)) { out.lat[k] = lerp('lat'); out.edge[k] = lerp('edge'); }
     out.traffic[k] = a.traffic || b.traffic ? 1 : 0;
+    out.rpm[k] = a.rpm === undefined ? NaN : lerp('rpm');
+    const near = f < 0.5 ? a : b;
+    if (near.tc !== undefined) out.tc[k] = near.tc;
+    if (near.abs !== undefined) out.abs[k] = near.abs;
   }
   return out;
 }
@@ -664,4 +674,113 @@ export function sessionSummary(A, ref) {
     return { corner: c.id, k, avgLoss, spread: A.spread[k], why: top ? top[0] : '', whyCount: top ? top[1] : 0, laps: use.length };
   });
   return out.sort((a, b) => b.avgLoss - a.avgLoss);
+}
+
+// ---------- 기어·코너 가이드·TC/ABS ----------
+// 기어별 속도/회전수 비 (m/s per rpm): 이 차의 기어비를 기록에서 알아낸다
+export function gearRatios(samples) {
+  const by = new Map();
+  for (const x of samples) {
+    if (!(x.gear > 0) || !(x.rpm > 1500) || !(x.v > 5) || x.pit) continue;
+    if (!by.has(x.gear)) by.set(x.gear, []);
+    by.get(x.gear).push(x.v / x.rpm);
+  }
+  const ratio = {};
+  for (const [g, arr] of by) if (arr.length > 30) ratio[g] = median(arr);
+  const maxRpm = median(samples.filter((x) => x.maxRpm > 0).map((x) => x.maxRpm)) || Math.max(...samples.map((x) => x.rpm || 0));
+  return { ratio, maxRpm };
+}
+// 코너 최저 속도에서 회전수가 한계의 85%를 넘지 않는 가장 낮은 단 (탈출 가속이 가장 좋다)
+export function recommendGear(G, v) {
+  const gears = Object.keys(G.ratio).map(Number).sort((a, b) => a - b);
+  for (const g of gears) if (v / G.ratio[g] <= G.maxRpm * 0.85) return { gear: g, rpm: Math.round(v / G.ratio[g]) };
+  return gears.length ? { gear: gears[gears.length - 1], rpm: Math.round(v / G.ratio[gears[gears.length - 1]]) } : null;
+}
+
+// TC·ABS 개입: 코너 하나에서 개입한 거리(m)와, 개입이 시작된 순간의 페달 값
+function aidMetrics(R, c) {
+  if (!R.abs || !Number.isFinite(R.abs[c.apex]) && !R.abs.some((v) => Number.isFinite(v))) return null;
+  let absM = 0, absOn = null, tcM = 0, tcOn = null, tcRise = null;
+  const end = Math.min(R.n - 1, c.to);
+  for (let i = Math.max(0, c.from - 100); i <= c.apex + 10; i++) if (R.abs[i] > 0.5) { absM++; if (absOn === null) absOn = { i, brk: R.brk[i], v: R.v[i] }; }
+  for (let i = Math.max(0, c.apex - 20); i <= end; i++) if (R.tc[i] > 0.5) {
+    tcM++;
+    if (tcOn === null) {
+      tcOn = { i, thr: R.thr[i], v: R.v[i] };
+      // 개입 직전 0.4초 동안 스로틀을 얼마나 빨리 열었나
+      let j = i;
+      while (j > c.apex - 40 && R.t[i] - R.t[j] < 0.4) j--;
+      tcRise = R.thr[i] - R.thr[j];
+    }
+  }
+  return { absM, absOn, tcM, tcOn, tcRise };
+}
+
+// 코너 가이드: 내 깨끗한 랩들(중앙값)과 기준 랩을 코너마다 비교해 제동 시점·기어·코너 속도·TC/ABS를 한 줄로
+export function cornerGuide(A, ref) {
+  const G = gearRatios(A.samples);
+  const mine = A.laps.filter((l) => l.valid);
+  const R = ref?.lap;
+  return A.corners.map((c, k) => {
+    const use = mine.filter((l) => !l.bad[k] && !l.traffic[k]);
+    const pool = use.length ? use : mine;
+    const med = (f) => median(pool.map(f).filter((v) => Number.isFinite(v)));
+    // 제동 시점 (페달 기록이 있으면 브레이크, 없으면 감속 시작) — 칸 1개 ≈ 1 m
+    const myBrake = med((l) => l.corners[k].brakePoint ?? l.speed[k].decelStart);
+    const refBrake = R ? (ref.pedals && R.corners ? R.corners[k].brakePoint ?? R.speed[k].decelStart : R.speed[k].decelStart) : null;
+    const brakeDiff = Number.isFinite(myBrake) && Number.isFinite(refBrake) ? Math.round(myBrake - refBrake) : null; // + 면 내가 늦게 밟음
+    const myMin = med((l) => l.speed[k].minSpeed);
+    const refMin = R ? R.speed[k].minSpeed : null;
+    // 기어: 기준 랩 꼭짓점 기어(페달 기록이 있는 랩), 없으면 기준 최저 속도에서 추천
+    const apexAt = (L) => L.speed[k].apexAt;
+    const myGear = median(pool.map((l) => l.R.gear[apexAt(l)]).filter((g) => g > 0));
+    // 기준 랩이 이 코너에서 사고·트래픽이 있었으면 그 기어는 믿지 않는다
+    const refGear = R && ref.pedals && !R.bad?.[k] && !R.traffic?.[k] ? R.R.gear[apexAt(R)] : null;
+    const rec = recommendGear(G, ((refMin ?? myMin) || 0) / 3.6);
+    const targetGear = refGear > 0 ? refGear : rec?.gear ?? null;
+    // 코너 속도 여유: 기준보다 느리면 그만큼, 내가 기준이면 횡G 여유로 추정
+    let speedUp = null, speedNote = '';
+    if (Number.isFinite(refMin) && !ref.mine) speedUp = refMin - myMin;
+    else {
+      // 내 베스트 랩에서 이 코너의 최대 횡G가 이 세션 최대치(타이어 한계로 본다)보다 낮으면 그만큼 더 빨리 돌 수 있다
+      const lim = A.cal?.gyMax || 0;
+      const best = A.best, S = best.samples;
+      let gy = 0, d = 0;
+      for (let i = 0; i < S.length; i++) {
+        if (i) d += Math.hypot(S[i].x - S[i - 1].x, S[i].z - S[i - 1].z);
+        const r = Math.floor((d / best.dist) * best.R.n);
+        if (r >= c.entry && r <= c.exit && Number.isFinite(S[i]._gy)) gy = Math.max(gy, Math.abs(S[i]._gy));
+      }
+      if (lim > 0.5 && gy > 0.3) speedUp = 0; // 횡G가 한계 근처면 '적당함'
+      if (lim > 0.5 && gy > 0.3 && gy < lim * 0.85) {
+        // 같은 반경에서 횡G ∝ v² → v_max = v·√(한계/지금), 10% 넘게는 말하지 않는다
+        speedUp = best.speed[k].minSpeed * Math.min(0.1, Math.sqrt(lim / gy) - 1);
+        speedNote = '추정';
+      }
+    }
+    // TC·ABS (내 깨끗한 랩들)
+    const aids = pool.map((l) => aidMetrics(l.R, c)).filter(Boolean);
+    let abs = null, tc = null;
+    if (aids.length) {
+      const absLaps = aids.filter((a) => a.absM > 3);
+      if (absLaps.length) abs = { laps: absLaps.length, of: aids.length, m: Math.round(median(absLaps.map((a) => a.absM))), brk: median(absLaps.map((a) => a.absOn.brk)), v: median(absLaps.map((a) => a.absOn.v)) * 3.6 };
+      const tcLaps = aids.filter((a) => a.tcM > 3);
+      if (tcLaps.length) tc = { laps: tcLaps.length, of: aids.length, m: Math.round(median(tcLaps.map((a) => a.tcM))), thr: median(tcLaps.map((a) => a.tcOn.thr)), rise: median(tcLaps.map((a) => a.tcRise)) };
+    }
+    const hasAids = A.laps.some((l) => l.R.abs.some((v) => Number.isFinite(v)));
+    return { corner: c.id, k, brakeDiff, myBrake, refBrake, myMin, refMin, speedUp, speedNote, myGear: Number.isFinite(myGear) ? myGear : null, targetGear, gearFrom: refGear > 0 ? '기준 랩' : '회전수 기준 추천', recRpm: rec?.rpm ?? null, abs, tc, hasAids };
+  });
+}
+
+// 가이드 한 줄 문장들
+export function guideText(g) {
+  const out = {};
+  if (g.brakeDiff !== null) out.brake = g.brakeDiff < -8 ? `${-g.brakeDiff} m 더 늦게 밟아도 됨` : g.brakeDiff > 8 ? `${g.brakeDiff} m 더 일찍 밟기` : '적당함';
+  if (g.targetGear) out.gear = g.myGear && g.myGear !== g.targetGear ? `${g.targetGear}단 (지금 ${g.myGear}단)` : `${g.targetGear}단`;
+  if (g.speedUp !== null) out.speed = g.speedUp > 2 ? `+${g.speedUp.toFixed(0)} km/h 더 가능${g.speedNote ? ' (추정)' : ''}` : g.speedUp < -3 ? `${(-g.speedUp).toFixed(0)} km/h 과함` : '적당함';
+  const aids = [];
+  if (g.abs) aids.push(`ABS ${g.abs.m} m 개입 (${g.abs.laps}/${g.abs.of}랩) → 처음 브레이크 ${Math.round(g.abs.brk * 100)}%를 ${Math.max(50, Math.round(g.abs.brk * 100) - 7)}% 정도로`);
+  if (g.tc) aids.push(`TC ${g.tc.m} m 개입 (${g.tc.laps}/${g.tc.of}랩) → 스로틀 ${Math.round(g.tc.thr * 100)}%에서 개입, ${Math.max(30, Math.round(g.tc.thr * 100) - 10)}%까지만 열고 핸들이 풀리면 끝까지${g.tc.rise > 0.5 ? ' (0.4초 만에 ' + Math.round(g.tc.rise * 100) + '%를 열었음 → 더 천천히)' : ''}`);
+  out.aids = aids.join(' · ');
+  return out;
 }

@@ -1,4 +1,5 @@
 // 코칭 탭: 실시간 연결(브리지)·기록 파일 → 기준 랩(세션 최고) 비교, 지도·고스트·미니맵, 개선할 것, 사고 분석, 브레이킹 구간
+import { cornerGuide, guideText } from './coach.js';
 import { analyzeSession, coachLap, sessionSummary, cornerMetrics, cornerReasons, speedMetrics, speedReasons, defaultReference, externalCandidates, referenceCandidates, FIX } from './coach.js';
 import { LineChart } from './chart.js';
 import { findShape, alignShape, makeBins, addBin, binsToObs, layoutFromBins, cornersFromShape } from './track-maps.js';
@@ -107,7 +108,7 @@ export function createCoach({ root }) {
       if (res.error) { status(`기준 랩 파일: ${res.error}`); return; }
       extraRefs = [...extraRefs.filter((c) => !c.key.startsWith('f:' + label + ':')), ...res.list];
       A.refs = referenceCandidates(A, extraRefs);
-      A._layout = null;
+      A._layout = null; A._guide = null;
       status(`기준 랩 파일에서 ${res.list.length}개 랩을 후보로 추가했습니다.`);
       render();
     }).catch((err) => status(`파일을 읽지 못했습니다: ${err.message}`));
@@ -301,6 +302,7 @@ export function createCoach({ root }) {
       ctx.textAlign = 'right';
       ctx.fillText(`${Math.round(r.v * 3.6)} km/h`, 168, y);
       ctx.fillText(r.gear > 0 ? `${r.gear}단` : r.gear === 0 ? 'N' : r.gear < 0 ? 'R' : '', 196, y);
+      if (Number.isFinite(r.rpm)) { ctx.font = `10px ${css('--font-data')}`; ctx.fillStyle = css('--ink-2'); ctx.fillText(`${Math.round(r.rpm)}`, 168, y + 9); ctx.font = `600 11px ${css('--font-data')}`; }
       const bar = (x, val, color) => {
         ctx.fillStyle = css('--grid'); ctx.fillRect(x, y - 5, 70, 10);
         if (Number.isFinite(val)) { ctx.fillStyle = color; ctx.fillRect(x, y - 5, 70 * Math.max(0, Math.min(1, val)), 10); }
@@ -421,6 +423,12 @@ export function createCoach({ root }) {
     $('#co-live-lap').title = L.timing ? '' : '결승선을 넘으면 재기 시작합니다';
     buildLiveMap(s);
     $('#co-live-thr').style.width = `${(s.thr * 100).toFixed(0)}%`;
+    // 회전수: 85%까지 초록, 95%까지 노랑, 그 위는 빨강 (변속 시점)
+    $('#co-live-rpm').textContent = Math.round(s.rpm || 0);
+    const rf = s.maxRpm > 0 ? Math.min(1, s.rpm / s.maxRpm) : 0;
+    const rb = $('#co-live-rpmbar').firstElementChild;
+    rb.style.width = `${(rf * 100).toFixed(0)}%`;
+    rb.style.background = rf > 0.95 ? css('--drag') : rf > 0.85 ? css('--warn') : css('--ok');
     $('#co-live-brk').style.width = `${(s.brk * 100).toFixed(0)}%`;
     if (s.cars) {
       // 다른 차의 진행 방향: 지난번 위치와 비교
@@ -456,6 +464,7 @@ export function createCoach({ root }) {
       const len = s.trackLen || A.ref.length;
       const idx = Math.min(A.ref.n - 1, Math.max(0, Math.floor(((Number.isFinite(s.lapDist) ? s.lapDist : L.dist) / len) * A.ref.n)));
       if (traffic) L.trafficIdx = idx;
+      showNextCorner(idx, s);
       d = t - RF.t[idx];
       let lo = 0, hi = RF.n - 1;
       while (lo < hi) { const mid = (lo + hi) >> 1; if (RF.t[mid] < t) lo = mid + 1; else hi = mid; }
@@ -498,6 +507,30 @@ export function createCoach({ root }) {
     store.set('aerolab.layout.' + s.track, L);
     status(`${sessionName} · 트랙 지도 완성 (${L.source})`);
     setupMap();
+  }
+
+  // 다음 코너: 제동까지 남은 거리, 기어, 목표 최저 속도
+  function showNextCorner(idx, s) {
+    const G = guideFor();
+    if (!G) return;
+    const n = A.ref.n;
+    let best = null;
+    for (const g of G) {
+      const c = A.corners[g.k];
+      const b = Number.isFinite(g.refBrake) ? g.refBrake : c.entry;
+      const ahead = (c.apex - idx + n) % n;
+      if (ahead > 0 && (!best || ahead < best.ahead)) best = { g, b, ahead, toBrake: (b - idx + n) % n };
+    }
+    if (!best) return;
+    const { g } = best;
+    const tb = best.toBrake < best.ahead ? `제동까지 ${best.toBrake} m` : '제동 구간';
+    $('#co-live-next').textContent = `다음 ${g.corner}번 · ${tb} · ${g.targetGear ? g.targetGear + '단' : ''} · 최저 ${Math.round(g.refMin ?? g.myMin)} km/h`;
+  }
+  function guideFor() {
+    if (!A) return null;
+    const rf = ref();
+    if (!A._guide || A._guide.key !== rf.key) A._guide = { key: rf.key, rows: cornerGuide(A, rf) };
+    return A._guide.rows;
   }
 
   function showDelta(d, name) {
@@ -653,7 +686,7 @@ export function createCoach({ root }) {
     drawCar(ctx, ...xf(m.x, m.z), h, css('--accent'), 1.2);
     const dl = doc.getElementById('dl');
     if (d !== null && d !== undefined) { dl.textContent = sign(d); dl.className = d > 0 ? 'slow' : 'fast'; } else dl.textContent = '±0.00';
-    doc.getElementById('sg').textContent = `${Math.round(s.v * 3.6)} km/h · ${s.gear > 0 ? s.gear + '단' : s.gear === 0 ? 'N' : 'R'}`;
+    doc.getElementById('sg').textContent = `${Math.round(s.v * 3.6)} km/h · ${s.gear > 0 ? s.gear + '단' : s.gear === 0 ? 'N' : 'R'} · ${Math.round(s.rpm || 0)} rpm`;
     doc.getElementById('th').style.width = `${Math.round((s.thr ?? 0) * 100)}%`;
     doc.getElementById('bk').style.width = `${Math.round((s.brk ?? 0) * 100)}%`;
   }
@@ -701,7 +734,7 @@ export function createCoach({ root }) {
       const ci = at(lap.R, t);
       const G = ghost.lap.R;
       const gi = at(G, t);
-      const row = (R, i, name, color, pedals) => ({ name, color, v: R.v[i], gear: pedals ? R.gear[i] : null, thr: pedals ? R.thr[i] : NaN, brk: pedals ? R.brk[i] : NaN });
+      const row = (R, i, name, color, pedals) => ({ name, color, v: R.v[i], gear: pedals ? R.gear[i] : null, rpm: pedals && R.rpm ? R.rpm[i] : NaN, thr: pedals ? R.thr[i] : NaN, brk: pedals ? R.brk[i] : NaN });
       drawMap({
         ghost: { ...atR(G, gi), h: headR(mapXf, G, gi) },
         me: { ...atR(lap.R, ci), h: headR(mapXf, lap.R, ci) },
@@ -799,6 +832,12 @@ export function createCoach({ root }) {
     for (const g of [...byKey.values()].sort((a, b) => b.n - a.n || b.loss - a.loss).slice(0, 2)) {
       items.push(`<li><b>사고 원인</b> <span class="co-chip">${esc(g.label)}${g.n > 1 ? ` ×${g.n}` : ''}</span>${g.corners.size ? ` (${[...g.corners].join('·')}번 코너)` : ''} → <span class="fix">${esc(g.fix)}</span></li>`);
     }
+    // TC·ABS: 개입이 가장 긴 코너 2곳
+    const aids = guideFor().filter((g) => g.abs || g.tc).sort((a, b) => ((b.abs?.m || 0) + (b.tc?.m || 0)) - ((a.abs?.m || 0) + (a.tc?.m || 0))).slice(0, 2);
+    for (const g of aids) {
+      if (g.abs) items.push(`<li><b>${g.corner}번 코너</b> <span class="co-chip">ABS ${g.abs.m} m</span> → <span class="fix">처음 브레이크 ${Math.round(g.abs.brk * 100)}% → ${Math.max(50, Math.round(g.abs.brk * 100) - 7)}% 정도로</span></li>`);
+      if (g.tc) items.push(`<li><b>${g.corner}번 코너</b> <span class="co-chip">TC ${g.tc.m} m</span> → <span class="fix">스로틀 ${Math.max(30, Math.round(g.tc.thr * 100) - 10)}%까지 열고 핸들 풀리면 끝까지</span></li>`);
+    }
     $('#co-improve').innerHTML = items.join('') || `<li>${rf.mine ? '내 랩끼리는 큰 차이가 없습니다. 더 빠른 사람의 기록(같은 세션 또는 기준 랩 파일)과 비교하면 더 많이 보입니다.' : '기준 랩과 0.05초 넘게 차이 나는 코너가 없습니다.'}</li>`;
   }
 
@@ -879,6 +918,7 @@ export function createCoach({ root }) {
     $('#co-skipped').hidden = !skipped.length;
     $('#co-skipped').textContent = skipped.length ? `${skipped.join(', ')}번 코너는 다른 차와 붙어 달려서 코칭에서 뺐습니다.` : '';
 
+    renderGuide();
     renderBrakeGrid(lap, rf);
     renderCornerTable(lap, rf);
 
@@ -905,6 +945,17 @@ export function createCoach({ root }) {
     if (zoomCorner >= A.corners.length) zoomCorner = 0;
     $('#co-zoom-corner').value = String(zoomCorner);
     drawZoom();
+  }
+
+  function renderGuide() {
+    const rows = guideFor();
+    const hasAids = rows.some((g) => g.hasAids);
+    $('#co-guide').innerHTML = `<thead><tr><th>코너</th><th>제동 시점</th><th>기어</th><th>코너 속도</th>${hasAids ? '<th>TC·ABS</th>' : ''}</tr></thead><tbody>${rows.map((g) => {
+      const t = guideText(g);
+      const cls = (txt) => (/일찍 밟기|과함|지금/.test(txt || '') ? 'warn' : /늦게 밟아도|가능/.test(txt || '') ? 'good' : '');
+      return `<tr><td>${g.corner}번</td><td class="${cls(t.brake)}">${esc(t.brake || '–')}</td><td class="${cls(t.gear)}">${esc(t.gear || '–')}${g.recRpm && !g.myGear ? '' : ''}</td><td class="${cls(t.speed)}">${esc(t.speed || '–')}</td>${hasAids ? `<td class="aids">${esc(t.aids || '개입 없음')}</td>` : ''}</tr>`;
+    }).join('')}</tbody>`
+      + (hasAids ? '' : '<caption class="hint" style="caption-side:bottom;text-align:left">TC·ABS 개입은 새 브리지로 기록한 주행부터 나옵니다.</caption>');
   }
 
   // 브레이킹 구간만 코너별로: 제동 시작 40 m 전 ~ 꼭짓점 40 m 뒤

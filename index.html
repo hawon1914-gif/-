@@ -262,6 +262,12 @@ th:first-child, td:first-child { text-align: left; font-family: var(--font-body)
 .co-brk-grid figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
 .co-brk-grid figcaption { font-size: 12px; display: flex; justify-content: space-between; gap: 6px; }
 .co-brk-grid canvas { width: 100%; height: 110px; display: block; }
+.co-guide td { white-space: normal; }
+.co-guide td.warn { color: var(--drag); font-weight: 600; }
+.co-guide td.good { color: var(--ok); font-weight: 600; }
+.co-guide td.aids { font-size: 12px; max-width: 60ch; }
+.co-next { grid-column: 1 / -1; margin: 0; font: 600 15px var(--font-body); }
+#co-live-rpmbar i { left: 0 !important; }
 .co-info { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px 12px; font-size: 12px; margin-top: 8px; color: var(--ink-2); }
 .co-info b { color: var(--ink); font-family: var(--font-data); font-weight: 600; }
 .co-laps td.traffic, .co-tag { color: var(--warn); font-size: 12px; }
@@ -443,12 +449,14 @@ body[data-tab="coach"] .layout { grid-template-columns: minmax(0, 1fr); }
       <div class="co-live" id="co-live" hidden>
         <div><span>속도</span><b id="co-live-speed">0</b><small>km/h</small></div>
         <div><span>기어</span><b id="co-live-gear">N</b></div>
+        <div class="co-rpm"><span>RPM</span><b id="co-live-rpm">0</b><div class="co-bar" id="co-live-rpmbar"><i></i></div></div>
         <div><span>현재 랩</span><b id="co-live-lap">–</b></div>
         <div class="co-delta"><span id="co-live-dname">기준 대비</span><b id="co-live-delta">±0.00</b><div class="co-bar" id="co-live-bar"><i></i></div></div>
         <div class="co-pedals"><span>페달</span><div class="pb"><i id="co-live-thr"></i></div><div class="pb brk"><i id="co-live-brk"></i></div></div>
         <div><span>앞차</span><b id="co-live-ahead">–</b><small id="co-live-ahead-n"></small></div>
         <div><span>뒤차</span><b id="co-live-behind">–</b><small id="co-live-behind-n"></small></div>
         <p id="co-live-flag" class="dv-invalid"></p>
+        <p id="co-live-next" class="co-next"></p>
       </div>
       <div class="co-top">
         <figure class="co-mapbox">
@@ -493,6 +501,8 @@ body[data-tab="coach"] .layout { grid-template-columns: minmax(0, 1fr); }
         <div class="cw"><canvas id="co-c-inc"></canvas></div>
       </figure>
       <div id="co-lapview">
+        <h3 class="eyebrow">코너 가이드 <span class="hint">내 랩들(중앙값)과 기준 랩 비교 · 기어는 기준 랩 기어, 없으면 코너 최저 속도에서 회전수 85% 이하인 가장 낮은 단</span></h3>
+        <div class="table-wrap"><table id="co-guide" class="co-guide"></table></div>
         <h3 class="eyebrow">코칭 · <span id="co-lapname"></span></h3>
         <p class="note" id="co-skipped" hidden></p>
         <ol class="co-tips" id="co-tips"></ol>
