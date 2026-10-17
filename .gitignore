@@ -1,0 +1,7 @@
+node_modules/
+# 빌드 결과물 (npm run build로 생성)
+dist/
+
+# 브리지 주행 기록 (개인 데이터)
+bridge/recordings/
+__pycache__/

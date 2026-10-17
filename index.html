@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>LMU 코치</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 왼쪽 셋업 시트(파라미터) + 오른쪽 텔레메트리 작업대(탭별 실험). 폰에서는 위아래로 쌓인다. */
+:root {
+  --bg: #e9edf1;
+  --panel: #f8fafb;
+  --line: #cbd3db;
+  --grid: #dfe5ea;
+  --ink: #17212b;
+  --ink-2: #5b6876;
+  --accent: #e2581d;
+  --front: #1f6fd1;
+  --rear: #d4890f;
+  --drag: #c8323c;
+  --tire: #2f3a45;
+  --body: #c9d3dd;
+  --ok: #2c8a57;
+  --warn: #c0661a;
+  --c1: #1f6fd1; --c2: #7a52c7; --c3: #2c8a57; --c4: #e2581d; --c5: #6b7785; --c6: #b8336a; --c7: #0e7c86;
+  --asphalt: #4a5058; --asphalt-line: #c9ced4; --solid: #2a2f36; --scene-bg: #dfe5eb;
+  --font-display: "Barlow Condensed", "IBM Plex Sans KR", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --panel: #182029; --line: #2b3642; --grid: #232d38; --ink: #e4eaf0; --ink-2: #8b98a6;
+    --accent: #ff7a3d; --front: #5aa2ff; --rear: #f0b23a; --drag: #ff6470; --tire: #556270; --body: #2c3946;
+    --ok: #4cc283; --warn: #f09a4a;
+    --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2; --c6: #f06aa0; --c7: #3cc4cf;
+    --asphalt: #2a2e34; --asphalt-line: #6b737c; --solid: #0b0e12; --scene-bg: #141a21;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --panel: #182029; --line: #2b3642; --grid: #232d38; --ink: #e4eaf0; --ink-2: #8b98a6;
+  --accent: #ff7a3d; --front: #5aa2ff; --rear: #f0b23a; --drag: #ff6470; --tire: #556270; --body: #2c3946;
+  --ok: #4cc283; --warn: #f09a4a;
+  --c1: #5aa2ff; --c2: #a988ff; --c3: #4cc283; --c4: #ff7a3d; --c5: #9aa6b2; --c6: #f06aa0; --c7: #3cc4cf;
+  --asphalt: #2a2e34; --asphalt-line: #6b737c; --solid: #0b0e12; --scene-bg: #141a21;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 32px;
+}
+header.top {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; padding-block: 18px 14px;
+  border-bottom: 2px solid var(--ink); margin-bottom: 16px;
+}
+.brand { display: flex; flex-direction: column; gap: 0; }
+.brand h1 { font-family: var(--font-display); font-weight: 700; font-size: 34px; line-height: 1; letter-spacing: 0.02em; margin: 0; text-transform: uppercase; }
+.brand h1 b { color: var(--accent); }
+input[type=number], select {
+  font: 500 13px var(--font-data); color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 3px; padding: 4px 6px; min-width: 0;
+}
+select { font-family: var(--font-body); }
+input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button {
+  font: 600 13px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 3px; padding: 5px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--ink-2); }
+
+.eyebrow { font: 600 11px var(--font-body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+details { border-top: 1px solid var(--line); padding-top: 6px; }
+summary { font: 600 13px var(--font-body); cursor: pointer; padding-block: 4px; }
+.hint { font-size: 12px; color: var(--ink-2); margin: 0; }
+
+.bench { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.tabpanel { display: flex; flex-direction: column; gap: 16px; }
+.lede { margin: 0; color: var(--ink-2); max-width: 70ch; }
+
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.kpis.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) { .kpis, .kpis.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { background: var(--panel); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; border-top: 3px solid transparent; }
+.kpi.warn { border-top-color: var(--warn); }
+.kpi.ok { border-top-color: var(--ok); }
+.kl { font: 600 11px var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.kv { font: 600 26px/1.15 var(--font-display); font-variant-numeric: tabular-nums; }
+.kv small { font: 500 12px var(--font-data); color: var(--ink-2); margin-left: 3px; }
+.kn { font-size: 12px; color: var(--ink-2); }
+.kpi.warn .kn { color: var(--warn); }
+
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 16px; }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 10px 4px; min-width: 0; }
+figcaption { font: 600 13px var(--font-body); margin-bottom: 4px; }
+figcaption span { font-weight: 400; color: var(--ink-2); font-size: 12px; }
+.cw { position: relative; width: 100%; }
+canvas { display: block; touch-action: pan-y; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 13px; }
+.controls label { display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.controls input[type=number] { width: 72px; }
+.note { font-size: 13px; color: var(--ink-2); margin: 0; }
+
+.table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+th { font: 600 11px var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid var(--line); }
+td { font-family: var(--font-data); font-size: 12.5px; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child { text-align: left; font-family: var(--font-body); }
+
+/* 풍동 */
+.file-btn { position: relative; overflow: hidden; display: inline-flex; align-items: center; font: 600 13px var(--font-body); border: 1px solid var(--line); border-radius: 3px; padding: 5px 12px; background: var(--panel); cursor: pointer; color: var(--ink); }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.tn-status { font: 11px var(--font-data); color: var(--ink-2); }
+/* 주행 */
+.co-flag { margin: 0; font-size: 13px; color: var(--drag); font-weight: 600; }
+/* 코칭 */
+#co-port { width: 72px; }
+.co-top { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 900px) { .co-top { grid-template-columns: minmax(0, 1fr); } }
+.co-mapbox canvas { width: 100%; display: block; }
+.co-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.co-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.co-kpis .kv { font-size: 22px; }
+.co-laps td { cursor: pointer; }
+.co-laps tr.sel td { background: var(--grid); font-weight: 600; }
+.co-summary, .co-tips { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.co-tips { padding: 0; list-style: none; }
+.co-tips li { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 4px; padding: 10px 12px; }
+.co-tips p { margin: 4px 0 0; max-width: 80ch; }
+.tip-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.tip-head .loss { font: 600 14px var(--font-data); color: var(--drag); }
+.tip-head .ref { font-size: 12px; color: var(--ink-2); }
+#co-corners td.bad { color: var(--drag); font-weight: 600; }
+#co-corners td.good { color: var(--ok); font-weight: 600; }
+.co-live { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 10px 14px; align-items: end; }
+.co-live span { display: block; font: 600 11px var(--font-body); color: var(--ink-2); }
+.co-live b { font: 600 28px var(--font-display); font-variant-numeric: tabular-nums; }
+.co-live small { font: 12px var(--font-data); color: var(--ink-2); margin-left: 3px; }
+#co-live-delta.fast { color: var(--ok); } #co-live-delta.slow { color: var(--drag); }
+.co-bar { position: relative; height: 8px; background: var(--grid); border-radius: 2px; overflow: hidden; }
+.co-bar i { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; background: var(--drag); }
+.co-pedals .pb { height: 8px; background: var(--grid); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.co-pedals .pb i { display: block; height: 100%; width: 0; background: var(--ok); }
+.co-pedals .pb.brk i { background: var(--drag); }
+.co-zoombox canvas { width: 100%; display: block; }
+.co-refrow { margin: 6px 0 2px; }
+.co-improve { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.co-improve li b { font-weight: 600; }
+.co-improve .fix, .co-inc .fix, .co-tips .fix { color: var(--ok); font-weight: 600; }
+.co-board tr.me td { font-weight: 600; background: var(--grid); }
+.co-board tr.sel td:first-child::before { content: '▶ '; color: var(--front); }
+.co-laps td.secbest { color: var(--c2); font-weight: 600; }
+.co-inc { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.co-inc li { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--drag); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+.co-inc li.sel { background: var(--grid); }
+.co-inc .row1 { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.co-inc .loss, .co-tips .loss { color: var(--drag); font-weight: 600; font-family: var(--font-data); }
+.co-chip { display: inline-block; font-size: 12px; padding: 1px 6px; border-radius: 3px; background: var(--grid); color: var(--ink); }
+.co-inc details { margin-top: 4px; font-size: 13px; color: var(--ink-2); }
+.co-inc details p { margin: 2px 0; }
+.co-tips li { padding: 6px 10px !important; }
+.co-tips .row1 { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.co-brk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.co-brk-grid figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
+.co-brk-grid figcaption { font-size: 12px; display: flex; justify-content: space-between; gap: 6px; }
+.co-brk-grid canvas { width: 100%; height: 110px; display: block; }
+.co-incgrid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 10px; }
+@media (max-width: 900px) { .co-incgrid { grid-template-columns: minmax(0, 1fr); } }
+#co-incmap { width: 100%; height: 260px; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+#co-inc-t { flex: 1; min-width: 160px; }
+.co-chip.good { background: transparent; color: var(--ok); border: 1px solid var(--ok); }
+.co-inc .rec { margin-top: 3px; font-size: 13px; }
+#co-zoom { cursor: grab; touch-action: none; }
+.co-guide td { white-space: normal; }
+.co-guide td.warn { color: var(--drag); font-weight: 600; }
+.co-guide td.good { color: var(--ok); font-weight: 600; }
+.co-guide td.aids { font-size: 12px; max-width: 60ch; }
+.co-next { grid-column: 1 / -1; margin: 0; font: 600 15px var(--font-body); }
+#co-live-rpmbar i { left: 0 !important; }
+.co-info { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px 12px; font-size: 12px; margin-top: 8px; color: var(--ink-2); }
+.co-info b { color: var(--ink); font-family: var(--font-data); font-weight: 600; }
+.co-laps td.traffic, .co-tag { color: var(--warn); font-size: 12px; }
+#co-opps td:first-child { white-space: nowrap; }
+.co-inc li { border-left-color: var(--drag); cursor: pointer; }
+.co-inc li.sel { background: var(--grid); }
+.co-inc .meta { color: var(--ink-2); font-size: 12px; }
+.co-help { border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; background: var(--panel); }
+.co-help ol { margin: 8px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.co-help p { margin: 0; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><h1>LMU<b>/</b>Coach</h1></div>
+</header>
+
+<main class="tabpanel" id="coach">
+      <p class="lede">르망 얼티밋 주행을 세션에서 가장 빠른 랩(같은 클래스, 누가 달렸든)과 비교해, 어디서 왜 시간을 잃었는지와 스핀·이탈이 왜 났는지 알려줍니다.</p>
+      <div class="controls">
+        <button id="co-live-btn" type="button">실시간 연결</button>
+        <label for="co-port">포트 <input id="co-port" type="number" value="8770" step="1"></label>
+        <label class="file-btn" for="co-file">기록 파일 열기 (.jsonl)<input id="co-file" type="file" accept=".jsonl,.json,.txt"></label>
+        <label class="file-btn" for="co-reffile" title="다른 사람·다른 날의 기록에서 가장 빠른 랩을 기준 후보로 추가">기준 랩 파일 추가<input id="co-reffile" type="file" accept=".jsonl,.json,.txt"></label>
+        <button id="co-mini-btn" type="button" title="게임 위에 띄울 수 있는 작은 창 (게임은 창 모드·테두리 없는 창이어야 위에 보입니다)">미니맵 창</button>
+        <label for="co-auto" title="브리지가 켜져 있으면 게임에서 트랙에 나가는 순간 이 탭으로 넘어와 자동으로 연결합니다"><input id="co-auto" type="checkbox" checked> 게임 자동 연결</label>
+        <label for="co-voice"><input id="co-voice" type="checkbox"> 음성 안내</label>
+      </div>
+      <p class="note" id="co-status">브리지가 켜져 있으면 게임에서 트랙에 나가는 순간 자동으로 연결됩니다. 지난 주행은 기록 파일(.jsonl)로 열 수 있습니다.</p>
+      <div class="co-live" id="co-live" hidden>
+        <div><span>속도</span><b id="co-live-speed">0</b><small>km/h</small></div>
+        <div><span>기어</span><b id="co-live-gear">N</b></div>
+        <div class="co-rpm"><span>RPM</span><b id="co-live-rpm">0</b><div class="co-bar" id="co-live-rpmbar"><i></i></div></div>
+        <div><span>현재 랩</span><b id="co-live-lap">–</b></div>
+        <div class="co-delta"><span id="co-live-dname">기준 대비</span><b id="co-live-delta">±0.00</b><div class="co-bar" id="co-live-bar"><i></i></div></div>
+        <div class="co-pedals"><span>페달</span><div class="pb"><i id="co-live-thr"></i></div><div class="pb brk"><i id="co-live-brk"></i></div></div>
+        <div><span>앞차</span><b id="co-live-ahead">–</b><small id="co-live-ahead-n"></small></div>
+        <div><span>뒤차</span><b id="co-live-behind">–</b><small id="co-live-behind-n"></small></div>
+        <p id="co-live-flag" class="co-flag"></p>
+        <p id="co-live-next" class="co-next"></p>
+      </div>
+      <div class="co-top">
+        <figure class="co-mapbox">
+          <figcaption>트랙 <span id="co-map-legend">빨간 띠: 제동 구간 · 숫자: 코너 (최저 속도·기어) · S/F·S2·S3: 결승선·섹터</span></figcaption>
+          <canvas id="co-map"></canvas>
+          <div class="replay">
+            <label for="co-rp-lap">재생 <select id="co-rp-lap"></select></label>
+            <label for="co-rp-ghost">고스트 <select id="co-rp-ghost"></select></label>
+            <button id="co-play" type="button">고스트 재생</button>
+            <label for="co-speedup">배속 <select id="co-speedup"><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option></select></label>
+            <span id="co-replay-info" class="tn-status"></span>
+          </div>
+          <div class="co-info" id="co-info" hidden></div>
+        </figure>
+        <div id="co-results" class="co-side" hidden>
+          <div id="co-lapside">
+            <div class="kpis co-kpis">
+              <div class="kpi"><span class="kl">기준 랩</span><span class="kv" id="co-ref-time">–</span><span class="kn" id="co-ref-who"></span></div>
+              <div class="kpi"><span class="kl">내 베스트</span><span class="kv" id="co-best">–</span><span class="kn" id="co-best-gap"></span></div>
+              <div class="kpi"><span class="kl">내 이론상 베스트</span><span class="kv" id="co-theory">–</span><span class="kn" id="co-theory-kind"></span></div>
+            </div>
+            <div class="controls co-refrow">
+              <label for="co-target">기준 <select id="co-target"></select></label>
+              <label for="co-goal">목표 기록 <input id="co-goal" type="text" placeholder="1:28.500" size="8"></label>
+              <span id="co-goal-gap" class="tn-status"></span>
+            </div>
+            <h3 class="eyebrow">개선할 것</h3>
+            <ol class="co-improve" id="co-improve"></ol>
+            <h3 class="eyebrow">기록 <span class="hint">(나와 차이 · 눌러서 기준으로)</span></h3>
+            <div class="table-wrap"><table class="co-laps co-board"><tbody id="co-board"></tbody></table></div>
+            <h3 class="eyebrow">내 랩 <span class="hint">(눌러서 비교 랩 선택)</span></h3>
+            <div class="table-wrap"><table class="co-laps"><thead id="co-laps-head"></thead><tbody id="co-laps"></tbody></table></div>
+          </div>
+          <div id="co-inc-box" hidden>
+            <h3 class="eyebrow">사고·실수 <span class="hint">(눌러서 그 장면으로)</span></h3>
+            <ol class="co-inc" id="co-incidents"></ol>
+          </div>
+        </div>
+      </div>
+      <figure id="co-incfig" hidden>
+        <figcaption>사고 장면 <span id="co-incfig-name"></span> <span>0초 = 흐트러지기 시작한 순간 · 지도: 빨강 브레이크 · 초록 스로틀 · 회색 페달 없음 · 회색 차: 주변 차</span></figcaption>
+        <div class="co-incgrid">
+          <div class="cw"><canvas id="co-c-inc"></canvas></div>
+          <canvas id="co-incmap"></canvas>
+        </div>
+        <div class="controls"><button id="co-inc-play" type="button">재생</button><input id="co-inc-t" type="range" min="-6" max="6" step="0.05" value="0"><span id="co-inc-tl" class="tn-status">0.0초</span></div>
+      </figure>
+      <div id="co-lapview">
+        <h3 class="eyebrow">코너 가이드 <span class="hint">내 랩들(중앙값)과 기준 랩 비교 · 기어는 기준 랩 기어, 없으면 코너 최저 속도에서 회전수 85% 이하인 가장 낮은 단</span></h3>
+        <div class="table-wrap"><table id="co-guide" class="co-guide"></table></div>
+        <h3 class="eyebrow">코칭 · <span id="co-lapname"></span></h3>
+        <p class="note" id="co-skipped" hidden></p>
+        <ol class="co-tips" id="co-tips"></ol>
+        <h3 class="eyebrow">브레이킹 구간 <span class="hint">빨강: 브레이크 · 초록: 스로틀 · 실선: 비교 랩 · 점선: 기준 · 얇은 선: 속도 · 세로선: 꼭짓점</span></h3>
+        <div class="co-brk-grid" id="co-brk-grid"></div>
+        <div class="charts">
+          <figure><figcaption>속도 <span>파랑: 기준 · 주황: 비교 랩 · 숫자: 코너</span></figcaption><div class="cw"><canvas id="co-c-speed"></canvas></div></figure>
+          <figure><figcaption><span id="co-delta-name">기준</span> 대비 누적 시간 <span>올라가는 구간에서 시간을 잃음</span></figcaption><div class="cw"><canvas id="co-c-delta"></canvas></div></figure>
+          <figure><figcaption>라인 차이 <span>기준 라인보다 코너 안쪽 + / 바깥쪽 − (m)</span></figcaption><div class="cw"><canvas id="co-c-line"></canvas></div></figure>
+        </div>
+        <figure class="co-zoombox">
+          <figcaption>코너 라인 <span>파랑: 기준 · 주황: 비교 랩 · 회색 띠: 대략적인 트랙 폭</span></figcaption>
+          <div class="controls"><label for="co-zoom-corner">코너 <select id="co-zoom-corner"></select></label><span id="co-zoom-info" class="tn-status"></span></div>
+          <canvas id="co-zoom"></canvas>
+        </figure>
+        <details class="co-help"><summary>코너별 상세 수치</summary><div class="table-wrap"><table id="co-corners"></table></div></details>
+      </div>
+      <details class="co-help">
+        <summary>르망 얼티밋 연결 방법</summary>
+        <ol>
+          <li><code>AeroLab.html</code>을 <code>bridge</code> 폴더에 넣고(처음 한 번), <code>bridge/AeroLab_실행.bat</code>을 더블클릭합니다. 브리지가 켜지고 이 화면이 열립니다 (Python 3.8 이상 필요).</li>
+          <li>게임을 켜고 트랙에 나가 달리면 됩니다. 이 화면이 알아서 코칭 탭으로 넘어가 연결되고, 주행은 세션마다 <code>bridge/recordings</code>에 기록됩니다.</li>
+          <li>끝내려면 작업 표시줄의 "Aero Lab 브리지" 창을 닫습니다.</li>
+        </ol>
+        <p>기준 랩은 같은 세션에서 같은 클래스로 가장 빨리 달린 랩입니다 (다른 사람이어도). 다른 사람의 페달 입력은 게임이 주지 않아, 그 경우 속도·라인·구간 시간으로 비교합니다. 전 세계 기록은 르망 얼티밋이 공개하는 곳을 찾지 못해 자동으로 가져오지 못합니다. 커뮤니티 기록 사이트의 시간을 "목표 기록"에 넣으면 차이만 보여 줍니다.</p>
+      </details>
+    </main>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
