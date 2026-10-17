@@ -1,7 +1,7 @@
 {
-  "name": "aero-lab",
+  "name": "lmu-coach",
   "version": "1.0.0",
-  "description": "Sim racing aerodynamics lab",
+  "description": "Le Mans Ultimate driving coach",
   "directories": {
     "test": "tests"
   },
@@ -22,9 +22,5 @@
     "esbuild": "^0.24.0"
   },
   "private": true,
-  "type": "module",
-  "dependencies": {
-    "n8ao": "^1.9.4",
-    "postprocessing": "^6.35.6"
-  }
+  "type": "module"
 }

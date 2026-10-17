@@ -627,7 +627,7 @@ export function createCoach({ root }) {
     if (!win) { status('미니맵 창을 열지 못했습니다. 브라우저가 팝업을 막았는지 확인하세요.'); return; }
     const d = win.document;
     const vars = ['--bg', '--panel', '--line', '--grid', '--ink', '--ink-2', '--accent', '--front', '--drag', '--ok', '--c2', '--font-data', '--font-display'];
-    d.title = 'Aero Lab 미니맵';
+    d.title = 'LMU 코치 미니맵';
     d.head.innerHTML = `<meta charset="utf-8"><style>
       :root { ${vars.map((v) => `${v}: ${css(v)};`).join(' ')} }
       html, body { margin: 0; height: 100%; background: var(--panel); color: var(--ink); font: 12px var(--font-data); overflow: hidden; }

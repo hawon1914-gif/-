@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as P from '../js/physics.js';
-import { CARS } from '../js/cars.js';
-import { engineFor } from '../js/drivetrain.js';
-import { buildTrack } from '../js/track.js';
-import { makeDemoSession } from '../js/coach-demo.js';
+import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { analyzeSession, coachLap, splitLaps, defaultReference, sessionSummary } from '../js/coach.js';
 
-const env = { rho: P.airDensity(20, 1013.25) };
-const D = makeDemoSession(CARS.gt3, env, engineFor('gt3'), buildTrack('technical'), { laps: 6, seed: 23 });
+// 고정 시험 기록: 가상 GT3가 연습 트랙을 6바퀴 돈 기록 (원래 물리 시뮬레이터로 한 번 만들어 저장해 둔 것)
+const D = {
+  samples: zlib.gunzipSync(fs.readFileSync(new URL('./fixtures/demo-session.jsonl.gz', import.meta.url)))
+    .toString('utf8').trim().split('\n').map((l) => JSON.parse(l)),
+};
 const A = analyzeSession(D.samples);
 const ME = A.refs.find((c) => c.mine);
 

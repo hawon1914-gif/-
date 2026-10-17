@@ -1,7 +1,5 @@
 node_modules/
-# 출처·라이선스가 확인되지 않은 개인용 모델은 공개 저장소에 올리지 않는다
-assets/models/user/
-# 빌드 결과물에는 위 모델이 포함되므로 올리지 않는다 (npm run build로 생성)
+# 빌드 결과물 (npm run build로 생성)
 dist/
 
 # 브리지 주행 기록 (개인 데이터)

@@ -2,13 +2,13 @@
 Le Mans Ultimate (rFactor 2 엔진) 텔레메트리 브리지.
 
 게임의 공유 메모리를 초당 60번 읽어서 (게임 내장 LMU_Data 우선, 없으면 rF2 Shared Memory Map Plugin)
-  1) http://127.0.0.1:8770/stream 으로 실시간 전송 (Aero Lab의 '코칭' 탭이 받음)
+  1) http://127.0.0.1:8770/stream 으로 실시간 전송 (LMU 코치 화면이 받음)
   2) recordings/ 폴더에 세션을 .jsonl 파일로 기록
 한다. 파이썬 표준 라이브러리만 쓰므로 따로 설치할 것이 없다 (Python 3.8 이상, Windows).
 
 사용법:
   python lmu_bridge.py            게임 연결 (게임을 나중에 켜도 된다. 켜지면 알아서 붙는다)
-  python lmu_bridge.py --open     켜자마자 Aero Lab을 연다 (AeroLab_실행.bat이 이렇게 실행한다).
+  python lmu_bridge.py --open     켜자마자 LMU 코치을 연다 (LMU코치_실행.bat이 이렇게 실행한다).
                                   게임은 그 뒤에 켜도 되고, 트랙에 나가면 페이지가 알아서 연결·기록한다
   python lmu_bridge.py --demo     게임 없이 가짜 데이터로 연결 시험
   python lmu_bridge.py --replay 파일.jsonl   기록 파일을 실제 속도로 다시 보내기
@@ -538,17 +538,17 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _cors(self):
-        # 파일로 연 Aero Lab(file://)에서도 받을 수 있게 모든 출처를 허용 (127.0.0.1에서만 열림)
+        # 파일로 연 LMU 코치(file://)에서도 받을 수 있게 모든 출처를 허용 (127.0.0.1에서만 열림)
         self.send_header('Access-Control-Allow-Origin', '*')
 
     def do_GET(self):
-        if self.path in ('/', '/index.html', '/AeroLab.html'):
+        if self.path in ('/', '/index.html', '/LMUCoach.html', '/AeroLab.html'):
             page = find_page()
             if not page:
                 self.send_response(404)
                 self.send_header('Content-Type', 'text/plain; charset=utf-8')
                 self.end_headers()
-                self.wfile.write('AeroLab.html을 bridge 폴더에 넣어 주세요.'.encode())
+                self.wfile.write('LMUCoach.html을 bridge 폴더에 넣어 주세요.'.encode())
                 return
             with open(page, 'rb') as f:
                 body = f.read()
@@ -559,7 +559,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if self.path.startswith('/status'):
-            status['seen'] = time.time()  # 열려 있는 Aero Lab이 2초마다 묻는다
+            status['seen'] = time.time()  # 열려 있는 LMU 코치이 2초마다 묻는다
             body = json.dumps(status, ensure_ascii=False).encode()
             self.send_response(200)
             self._cors()
@@ -592,9 +592,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def find_page():
-    # Aero Lab 한 파일 빌드: bridge 폴더에 두거나, 저장소 구조면 ../dist
+    # LMU 코치 한 파일 빌드: bridge 폴더에 두거나, 저장소 구조면 ../dist
     here = os.path.dirname(os.path.abspath(__file__))
-    for p in (os.path.join(here, 'AeroLab.html'), os.path.join(here, '..', 'dist', 'AeroLab.html')):
+    # (예전 이름 AeroLab.html도 찾는다)
+    for p in (os.path.join(here, 'LMUCoach.html'), os.path.join(here, '..', 'dist', 'LMUCoach.html'), os.path.join(here, 'AeroLab.html')):
         if os.path.isfile(p):
             return p
     return None
@@ -623,7 +624,7 @@ def main():
     ap.add_argument('--port', type=int, default=8770)
     ap.add_argument('--hz', type=float, default=60)
     ap.add_argument('--no-record', action='store_true', help='기록 파일을 만들지 않음')
-    ap.add_argument('--open', action='store_true', help='켜자마자 Aero Lab을 브라우저로 연다 (이미 열려 있는 Aero Lab이 붙으면 열지 않음)')
+    ap.add_argument('--open', action='store_true', help='켜자마자 LMU 코치을 브라우저로 연다 (이미 열려 있는 LMU 코치이 붙으면 열지 않음)')
     args = ap.parse_args()
 
     # 창 없이(pythonw) 실행되면 화면 출력이 없으므로 bridge.log에 남긴다
@@ -646,18 +647,18 @@ def main():
         return
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f'[브리지] {status["source"]} → http://127.0.0.1:{args.port}/stream')
-    print(f'[브리지] 게임을 켜고 트랙에 나가면 자동으로 데이터가 갑니다. Aero Lab은 열려 있기만 하면 알아서 연결합니다{" (화면: http://127.0.0.1:%d/)" % args.port if find_page() else ""}. 끝내려면 Ctrl+C.')
+    print(f'[브리지] 게임을 켜고 트랙에 나가면 자동으로 데이터가 갑니다. LMU 코치은 열려 있기만 하면 알아서 연결합니다{" (화면: http://127.0.0.1:%d/)" % args.port if find_page() else ""}. 끝내려면 Ctrl+C.')
     if args.open:
-        # 이미 열려 있는 Aero Lab이 2초 안에 붙으면 새로 열지 않는다
+        # 이미 열려 있는 LMU 코치이 2초 안에 붙으면 새로 열지 않는다
         time.sleep(2.5)
         if client_count() == 0 and time.time() - status.get('seen', 0) > 3:
             page = find_page()
             if page:
                 url = f'http://127.0.0.1:{args.port}/#coach'
-                print(f'[브리지] Aero Lab을 엽니다: {url}')
+                print(f'[브리지] LMU 코치을 엽니다: {url}')
                 webbrowser.open(url)
             else:
-                print('[브리지] AeroLab.html을 bridge 폴더에 넣으면 자동으로 열어 줍니다.')
+                print('[브리지] LMUCoach.html을 bridge 폴더에 넣으면 자동으로 열어 줍니다.')
     last_wall = 0.0
     rec_key = None
     last_wait = ''
